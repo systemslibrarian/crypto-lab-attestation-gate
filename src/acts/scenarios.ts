@@ -134,7 +134,13 @@ export function scenarioClean(): ScenarioRun {
 export function scenarioTamperedBootloader(bootloaderContent?: string): ScenarioRun {
   const stages = cloneStages(DEFAULT_STAGES);
   const target = stages.find((s) => s.id === 'bootloader')!;
+  const reference = DEFAULT_STAGES.find((s) => s.id === 'bootloader')!.content;
   target.content = bootloaderContent ?? 'grubx64.efi 2.12-9 / a4f1c3 / signed';
+  // Ground truth is DERIVED, not asserted. Hand this act the reference image
+  // back and the machine really is running what it measured, so the exhibit
+  // must stop claiming otherwise -- a fixture that says "compromised" no
+  // matter what its own input is teaches the reader to ignore the label.
+  const tampered = target.content !== reference;
   const m = new Machine({ serial: 'A7-3391', stages, certificate: RESIDENCY_PROVEN });
   return run({
     id: 'tampered-bootloader',
@@ -146,14 +152,16 @@ export function scenarioTamperedBootloader(bootloaderContent?: string): Scenario
     evidence: m.attest(labelledNonce('today')),
     policy: basePolicy(),
     referenceLog: REFERENCE_LOG,
-    groundTruth: {
-      compromised: true,
-      headline: 'A modified boot loader ran, and the quote could not hide it.',
-      explanation:
-        'The register the loader was measured into diverged, and every value computed from it ' +
-        'diverged with it. The verifier learns that the measured set changed; the event log is ' +
-        'what tells it which stage.',
-    },
+    groundTruth: tampered
+      ? {
+          compromised: true,
+          headline: 'A modified boot loader ran, and the quote could not hide it.',
+          explanation:
+            'The register the loader was measured into diverged, and every value computed from ' +
+            'it diverged with it. The verifier learns that the measured set changed; the event ' +
+            'log is what tells it which stage.',
+        }
+      : CLEAN,
   });
 }
 
@@ -228,7 +236,7 @@ export function scenarioTimeOfUse(): ScenarioRun {
     referenceLog: REFERENCE_LOG,
     groundTruth: {
       compromised: true,
-      headline: 'Every check passed, and every one of them told the truth.',
+      headline: 'Something that was never measured is running right now.',
       explanation:
         'The quote describes the measurements in PCR 0, 4, 8 and 9 at the moment they were taken. ' +
         'Nothing extended those registers afterwards, because nothing was measured into them ' +
@@ -408,9 +416,7 @@ export function scenarioUncertifiedAk(checkAkCertification = true): ScenarioRun 
     referenceLog: REFERENCE_LOG,
     groundTruth: {
       compromised: true,
-      headline: checkAkCertification
-        ? 'Caught — but only because someone asked the question.'
-        : 'Nothing at all. No error, no signal, no trace.',
+      headline: 'The key that signed this quote lives in ordinary memory, not in a TPM.',
       explanation: checkAkCertification
         ? 'The certificate does not assert TPM residency or the restricted attribute, so the ' +
           'relying party has no reason to believe the private half is inside a TPM. TCG makes ' +
@@ -490,7 +496,7 @@ export function scenarioHostileAnchor(): ScenarioRun {
     referenceLog: REFERENCE_LOG,
     groundTruth: {
       compromised: true,
-      headline: 'Clean. Completely clean. And configured by the attacker.',
+      headline: 'The certificate authority that vouched for this key is the attacker.',
       explanation:
         'Evidence never establishes who to trust. RFC 9334 puts that decision with the Verifier ' +
         'Owner, supplied out of band, and no amount of appraisal can check it — appraisal is what ' +
