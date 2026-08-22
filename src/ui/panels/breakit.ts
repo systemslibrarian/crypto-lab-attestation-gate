@@ -18,6 +18,18 @@ import {
 import { DEFAULT_STAGES } from '../../boot/stages';
 import { button, card, clear, disclosure, el } from '../dom';
 import { callout, checkList, failureCodeList, headline, pcrComparison } from '../parts';
+import type { Child } from '../dom';
+
+/**
+ * The "which stage broke the chain" box, given its own class so a locator can
+ * address it without also matching the headline verdict's callout — the two
+ * say different things and only one of them names a stage.
+ */
+function divergenceCallout(label: string, body: Child[]): HTMLElement {
+  const node = callout(label, body, 'alarm');
+  node.classList.add('divergence');
+  return node;
+}
 
 type Which = 'tamper' | 'replay' | 'wrong-machine';
 
@@ -106,7 +118,7 @@ export function renderBreakPanel(root: HTMLElement): void {
       el('h4', { class: 'card-title' }, ['Replayed registers against the reference values']),
       pcrComparison(run.result.pcrs),
       ...(run.result.divergence
-        ? [callout(
+        ? [divergenceCallout(
             'Which stage broke the chain',
             [
               el('p', {}, [
@@ -126,7 +138,6 @@ export function renderBreakPanel(root: HTMLElement): void {
                   'the number inside the signature.',
               ]),
             ],
-            'alarm'
           )]
         : [])
     );

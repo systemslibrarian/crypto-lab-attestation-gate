@@ -161,7 +161,9 @@ test('the composite digest is SHA-256 over the registers the page listed', async
     expect(value).toMatch(/^[0-9a-f]{64}$/);
     concatenated += value;
   }
-  const printed = await text(page.locator('#panel-time .hexblock').first());
+  const printed = await text(
+    page.locator('#panel-time .hexblock').filter({ hasText: 'composite pcrDigest' })
+  );
   const digest = /= ([0-9a-f]{64})$/.exec(printed)![1];
   // Independent re-derivation: the ascending-index concatenation rule, applied
   // by hand to the values on screen, hashed by OpenSSL.
@@ -189,6 +191,8 @@ for (const [which, code, cause] of FAILURES) {
     const codesOnFailedRows = await failedRows.locator('.check-code').allTextContents();
     expect(new Set(codesOnFailedRows)).toEqual(new Set([code]));
     await expect(failedRows.first().locator('.check-detail').first()).toHaveText(cause);
+    // And the reference list on the same panel explains that same code.
+    await expect(page.locator('#panel-break .codes .code-name')).toHaveText(code);
 
     // Every other check passed. A run that fails everything teaches nothing.
     await expect(page.locator('#panel-break .checks .check[data-state="pass"]')).not.toHaveCount(0);
@@ -219,7 +223,8 @@ test('the tampered run names the stage that diverged, not just the register', as
   await expect(broken).toHaveCount(1);
   const name = await text(broken.locator('.pcr-name'));
   expect(name).toContain('PCR 4');
-  const callout = page.locator('#panel-break .callout[data-tone="alarm"]');
+  const callout = page.locator('#panel-break .callout.divergence');
+  await expect(callout).toHaveCount(1);
   await expect(callout).toContainText('Boot loader');
   await expect(callout).toContainText('measured into PCR 4');
 });
@@ -247,10 +252,10 @@ test('editing the input retires the stale verdict and says so', async ({ page })
 test('re-selecting the same scenario does not retire a fresh verdict', async ({ page }) => {
   await openTab(page, /Break It/);
   await page.locator('#panel-break button[data-which="replay"]').click();
-  const before = await page.locator('#panel-break .checks').innerText();
+  const before = await page.locator('#panel-break ul.checks').innerText();
   await page.locator('#panel-break button[data-which="replay"]').click();
   await expect(page.locator('#panel-break .verdict-label')).toHaveText('REJECTED');
-  expect(await page.locator('#panel-break .checks').innerText()).toBe(before);
+  expect(await page.locator('#panel-break ul.checks').innerText()).toBe(before);
   await expect(page.locator('#panel-break .check-code').first()).toHaveText('NONCE_STALE');
 });
 
@@ -282,7 +287,10 @@ test('NEG-1: the quote verifies with every check passing while the machine is co
   const registersBefore: string[] = [];
   const rows = page.locator('#panel-time .pcr-row');
   for (let i = 0; i < 4; i++) registersBefore.push(await text(rows.nth(i).locator('.pcr-value')));
-  const digestBefore = await text(page.locator('#panel-time .hexblock').first());
+  const compositeBlock = page
+    .locator('#panel-time .hexblock')
+    .filter({ hasText: 'composite pcrDigest' });
+  const digestBefore = await text(compositeBlock);
   await expect(page.locator('#panel-time .verdict-label')).toHaveText('ATTESTED');
 
   await page.locator('#panel-time .btn-row button').first().click();
@@ -303,7 +311,7 @@ test('NEG-1: the quote verifies with every check passing while the machine is co
   for (let i = 0; i < 4; i++) {
     expect(await text(rows.nth(i).locator('.pcr-value')), `PCR row ${i}`).toBe(registersBefore[i]);
   }
-  expect(await text(page.locator('#panel-time .hexblock').first())).toBe(digestBefore);
+  expect(await text(compositeBlock)).toBe(digestBefore);
 
   // 4. And the scope: the register a runtime measurement would use is not in
   //    the selection this quote covers. Both numbers come off the page.

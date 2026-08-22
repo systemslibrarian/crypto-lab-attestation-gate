@@ -425,14 +425,16 @@ body {
 
 /* ── Check rows ───────────────────────────────────────────────────────── */
 
-.checks {
+.checks,
+.codes {
   list-style: none;
   margin: 0.6rem 0 0;
   padding: 0;
   display: grid;
   gap: 0.4rem;
 }
-.check {
+.check,
+.code-row {
   display: grid;
   /* `minmax(0, 1fr)`, not `1fr`: a grid track's automatic minimum size is its
      min-content, and the detail lines carry 64-character hex runs. With a bare
@@ -445,18 +447,22 @@ body {
   padding: 0.55rem 0.7rem;
   background: var(--surface-2);
 }
-.check-icon {
+.check-icon,
+.code-icon {
   font-family: var(--mono);
   font-weight: 700;
   text-align: center;
+  color: var(--bad-text);
 }
-.check-name {
+.check-name,
+.code-name {
   display: block;
   font-weight: 600;
   font-size: 0.92rem;
   overflow-wrap: anywhere;
 }
-.check-detail {
+.check-detail,
+.code-detail {
   display: block;
   font-size: 0.86rem;
   color: var(--text-dim);
@@ -474,6 +480,15 @@ body {
   border-radius: 6px;
   padding: 0.05rem 0.4rem;
   margin-top: 0.3rem;
+}
+.code-row {
+  border-color: var(--bad);
+  background: color-mix(in oklab, var(--bad) 9%, var(--surface-2));
+}
+.code-name {
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+  color: var(--bad-text);
 }
 .check[data-state='pass'] {
   border-color: color-mix(in oklab, var(--ok) 55%, var(--border));

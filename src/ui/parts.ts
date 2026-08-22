@@ -173,16 +173,20 @@ export function callout(label: string, body: Child[], tone: 'alarm' | 'scope' = 
 /** The failure codes a run produced, each with what it means. */
 export function failureCodeList(codes: readonly FailureCode[]): HTMLElement | null {
   if (codes.length === 0) return null;
+  // Its own class, not `.checks`. The failure-code list and the verifier's
+  // check list look alike on purpose, but they are different claims — one is
+  // "here is what failed", the other is "here is what that code means" — and
+  // sharing a class made every locator that reaches for one of them ambiguous.
   return el(
     'ul',
-    { class: 'checks', role: 'list', 'aria-label': 'Failure codes' },
+    { class: 'codes', role: 'list', 'aria-label': 'Failure codes' },
     codes.map((code) =>
-      el('li', { class: 'check', 'data-state': 'fail', role: 'listitem' }, [
-        el('span', { class: 'check-icon', 'aria-hidden': 'true' }, ['✕']),
+      el('li', { class: 'code-row', 'data-state': 'fail', role: 'listitem' }, [
+        el('span', { class: 'code-icon', 'aria-hidden': 'true' }, ['✕']),
         el('span', {}, [
-          el('span', { class: 'check-name' }, [code]),
-          el('span', { class: 'check-detail' }, [FAILURE_TABLE[code].meaning]),
-          el('span', { class: 'check-detail' }, [`In the field: ${FAILURE_TABLE[code].realWorld}`]),
+          el('span', { class: 'code-name' }, [code]),
+          el('span', { class: 'code-detail' }, [FAILURE_TABLE[code].meaning]),
+          el('span', { class: 'code-detail' }, [`In the field: ${FAILURE_TABLE[code].realWorld}`]),
         ]),
       ])
     )
