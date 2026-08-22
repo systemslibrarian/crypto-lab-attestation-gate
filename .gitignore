@@ -4,6 +4,12 @@
 # age silently and become a second, wrong standard.
 CRYPTO-LAB-TEMPLATE*.md
 
+# This demo's brief, likewise a local working input. No sibling lab in the
+# fleet tracks one, and a file shape that exists in one repo out of ~180 is
+# drift rather than provenance. The file stays on disk; it is just not part
+# of what this repo ships.
+brief.md
+
 node_modules
 dist
 .DS_Store

@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:a11y": "playwright test --project=a11y",
-    "test:e2e": "playwright test --project=claims",
+    "test:e2e": "playwright test --project=claims --project=claims-mobile",
     "test:e2e:all": "playwright test"
   },
   "devDependencies": {
