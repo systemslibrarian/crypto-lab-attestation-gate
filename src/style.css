@@ -202,6 +202,12 @@ body {
 .card-lede {
   color: var(--text-dim);
   max-width: 72ch;
+  /* The EAT lede carries a bare 43-char base64url `eat_nonce` as running
+     prose, not as a `<code>` run, so none of the wrapping rules below reach
+     it. Unbroken it set a hard 378px floor on the whole document — 2px of
+     headroom at the 380px gate, which Linux font metrics ate in CI while
+     macOS passed. */
+  overflow-wrap: anywhere;
 }
 .card-scope {
   border-color: var(--border-strong);
@@ -593,6 +599,10 @@ body {
   margin: 0.6rem 0 0;
   padding: 0;
   display: grid;
+  /* `minmax(0, 1fr)`, not the implicit `auto`: an auto track's automatic
+     minimum size is the min-content of a `.byte-field`, so the widest field
+     path pushed the track — and the document — past the viewport. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.3rem;
 }
 .byte-field {
@@ -618,6 +628,9 @@ body {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--accent);
+  /* `qualifiedSigner.name` and `attested.quote.pcrDigest` have no break
+     opportunity a wrapping flex row can use. */
+  overflow-wrap: anywhere;
 }
 .byte-type {
   font-family: var(--mono);
