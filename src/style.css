@@ -674,6 +674,12 @@ body {
   margin: 0.6rem 0 0;
   padding: 0;
   display: grid;
+  /* Not what fixes the 318px floor above — `.stage-pcr` wrapping is, and this
+     rule changes nothing on its own today. It is here because an implicit
+     `auto` track takes its minimum from a row's min-content, which is how one
+     unbreakable token in any future stage row would silently rebuild that
+     floor. `.bytemap` needed the same guard and there it WAS load-bearing. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
 }
 .stage {
@@ -709,6 +715,12 @@ body {
   border-radius: 6px;
   padding: 0.05rem 0.4rem;
   color: var(--text-dim);
+  /* TCG event types are long and have no break opportunity —
+     `EV_EFI_BOOT_SERVICES_APPLICATION` is 262px of unbreakable mono, and as a
+     flex item of `.stage-head` it set a 318px floor on the whole document:
+     2px of headroom at the 320px reflow threshold. Same shape as `.card-lede`
+     and `.byte-path`. */
+  overflow-wrap: anywhere;
 }
 .stage-meta {
   font-size: 0.8rem;
@@ -747,6 +759,13 @@ details.disclosure > summary::marker {
   margin-top: 0.6rem;
   border-top: 1px solid var(--border);
   padding-top: 0.6rem;
+  /* The disclosures are where this lab keeps its dense prose, and that prose
+     is full of identifiers with no break opportunity — `tpm2_checkquote`,
+     `TPM_GENERATED_VALUE = 0xff544347`, CVE numbers, spec section refs. Most
+     of it sits in bare `<p>` elements that no class-scoped rule reaches, and
+     together they held a 317px floor on the document. Inherited from here
+     rather than applied per element, so the next paragraph is covered too. */
+  overflow-wrap: anywhere;
 }
 
 /* ── Callouts, pills, tables ──────────────────────────────────────────── */
