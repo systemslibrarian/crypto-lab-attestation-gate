@@ -8,6 +8,15 @@ export const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
 /** A phone-width viewport, for the WCAG 1.4.10 reflow half of the gate. */
 export const NARROW = { width: 380, height: 800 };
+/**
+ * A HEADROOM probe, deliberately narrower than the 320 CSS px WCAG 1.4.10 asks
+ * for. Scanning AT 320 does not work: this lab shipped a defect whose min-content
+ * floor was 318px, so it fit at 320 and failed at 380 only once Linux font metrics
+ * in CI inflated it — a single-width check cannot see a floor sitting just under
+ * that width. 280 asserts the floor is low enough that no font-metric delta can
+ * push it back over 320.
+ */
+export const REFLOW = { width: 280, height: 800 };
 
 /**
  * Shared machinery for the WCAG gate.

@@ -4,6 +4,7 @@ import {
   driveAllStates,
   expectBaselineNotStale,
   NARROW,
+  REFLOW,
   reportCollected,
   watchPageErrors,
 } from './gate';
@@ -51,6 +52,17 @@ test(`no WCAG A/AA violations in ${THEME} theme at 380px`, async ({ page }) => {
   await page.setViewportSize(NARROW);
   await boot(page, THEME);
   await driveAllStates(page, `${THEME} @380px`);
+  expect(errors, errors.join('\n')).toEqual([]);
+  expectBaselineNotStale();
+  reportCollected();
+});
+
+test('no WCAG A/AA violations at 280px — reflow headroom below the 320px threshold', async ({ page }) => {
+  test.setTimeout(1_800_000);
+  const errors = watchPageErrors(page);
+  await page.setViewportSize(REFLOW);
+  await boot(page, THEME);
+  await driveAllStates(page, `${THEME} @280px`);
   expect(errors, errors.join('\n')).toEqual([]);
   expectBaselineNotStale();
   reportCollected();
