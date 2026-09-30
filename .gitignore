@@ -16,3 +16,4 @@ dist
 *.local
 playwright-report
 test-results
+chat.md
