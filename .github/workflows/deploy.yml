@@ -46,6 +46,9 @@ jobs:
       - name: Unit and known-answer tests (Vitest)
         run: npm test
 
+      - name: Focused DAA mutation gate
+        run: npm run mutations
+
       - name: Build (typecheck gates the build)
         run: npm run build
 

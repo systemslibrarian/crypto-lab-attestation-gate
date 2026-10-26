@@ -368,7 +368,7 @@ export async function auditNonText(page: Page, within = 'body *'): Promise<NonTe
     /**
      * Style and geometry are memoised per element for one pass.
      *
-     * A driven pass here walks six tabpanels, and the expensive part is the
+     * A driven pass here walks seven tabpanels, and the expensive part is the
      * TPMS_ATTEST byte inspector: seventeen `.byte-field` rows, each with a
      * hex run and a decoded value, sitting beside a full `.checks` list and
      * four `.pcr-row` registers — all siblings re-walking the same ancestors

@@ -1,6 +1,6 @@
 # Attestation Gate
 
-Browser demo: measured boot into PCRs, a real TPMS_ATTEST quote, and a verifier with reference values — then execute something outside the measured set after the final boot measurement and watch every check pass. A boot quote proves what was measured, not what is running.
+Browser demo: measured boot into PCRs, a real TPMS_ATTEST quote, and a verifier with reference values — then execute something outside the measured set after the final boot measurement and watch every check pass. It also compares that stable attestation identity with a bounded, executable Direct Anonymous Attestation membership proof. A boot quote proves what was measured, not what is running.
 
 **Live demo:** https://systemslibrarian.github.io/crypto-lab-attestation-gate/
 
@@ -19,6 +19,8 @@ analogy to them.
 | `TPMS_ATTEST` | TPM 2.0 Library Part 2, `TPMS_ATTEST` / `TPMS_QUOTE_INFO` / `TPML_PCR_SELECTION` | Hand-rolled marshaller with a per-field byte map, plus a strict fail-closed parser |
 | Restricted signing | TPM 2.0 Part 1 §11.4.6.1, §25.1.3; Part 3 §15.4, §17.6, §20.2 | `TicketIsSafe()`, the NULL validation ticket, and `TPM_RC_TICKET` on `TPM2_Sign` |
 | Quote signature | ECDSA on NIST P-256 (FIPS 186-4) | `@noble/curves`, deterministic per RFC 6979 so every byte on the page is reproducible |
+| Anonymous membership | Camenisch–Drijvers–Lehmann `Pi_DAA+`, full version of IACR ePrint 2016/663 §5.1 | Zero-application-attribute Setup, Join proof, BBS+ credential, randomized Sign/Verify, basename Link, and private-key rogue-list check over BLS12-381 |
+| Hash to curve | RFC 9380 | Separate DAA-specific BLS12-381 G1 domain-separation tags for the public generators and basename map |
 | Credential activation | TPM 2.0 Part 3 §12.6–12.7; TCG EK Credential Profile | Real ECDH on P-256, real `KDFa`/`KDFe`, real AES-128-CFB, real HMAC-SHA-256 |
 | Attestation architecture | **RFC 9334** — RATS Architecture (Informational, January 2023) | Attester → Evidence → Verifier → Attestation Result → Relying Party, with Endorsements and Reference Values as separate inputs |
 | Evidence format | **RFC 9711** — Entity Attestation Token (Standards Track, April 2025) | A real claims-set, integer-keyed in CBOR and name-keyed in JSON |
@@ -35,15 +37,38 @@ reach the verifier separately, in an unsigned event log, and are trustworthy onl
 that log has to reproduce the composite digest inside the signature. The page shows every one of
 those steps with its inputs.
 
+The anonymous path uses the same additive/multiplicative translation throughout: the paper's
+`g^x h^y` is `x·g + y·h` in the elliptic-curve code. The issuer issues
+`A = (e+x)^−1·(g1 + s·h0 + gsk·h1)`. Signing randomizes that credential and proves the three
+relations from CDL §5.1; verification separately checks `e(A′, w) = e(A-bar, g2)` and reconstructs
+the Fiat–Shamir commitments. Under one basename, `nym = gsk·H1(basename)` is stable and Link can
+compare two valid proofs. Across different basenames Link is undefined; unequal pseudonyms in one
+run are not, by themselves, a proof that ancillary metadata is unlinkable.
+
 **The security model.** The attester is untrusted; the TPM inside it is trusted to the extent that
 its keys never leave it. The verifier is trusted by the relying party. The verifier's trust anchors
 are supplied out of band and are never established by Evidence. Nothing here defends against a
 compromised verifier, and nothing here defends against physical attack on a TPM.
 
+For the DAA panel, CDL assumes an authenticated Join channel and an issuer admission rule. This
+repo verifies the nonce-bound proof of `gsk`; it does not implement unique-TPM admission inside the
+DAA module. The existing endorsement-key/credential-activation exhibit models that prerequisite as
+an enrollment adapter, not as part of CDL's algebra. The paper's Theorem 1 additionally relies on
+DDH, the JOC qSDH assumption, random oracles, static corruptions, online-extractable proofs, and
+idealized hybrid functionalities. This browser run does not prove those assumptions and does not
+claim UC security.
+
 **Not production cryptography.** This is a teaching demo. It runs entirely in your browser, with no
 backend, no network calls and nothing persisted. There is no TPM anywhere near it — a TPM is
 hardware, and this page models one in software, so every protection that comes from a key
 physically never leaving a chip is described here rather than enforced.
+The BLS12-381 choice is a Type-3 algebraic teaching instantiation, not the paper's benchmark curve,
+not a TPM 2.0 or ISO ECDAA wire profile, and not interoperable with hardware commands. Fixture
+values are reproducible: proof nonces are secret-keyed with HMAC-SHA-256 and bind the complete
+framed context so reusing an external fixture seed does not repeat a Schnorr witness. The
+JavaScript bigint/group operations remain variable-time and are not side-channel-hardened secret
+handling. All fixture seeds ship in the source; “secret” describes the protocol role, not secrecy
+enforced against someone inspecting the browser bundle.
 
 ## Exhibits
 
@@ -70,6 +95,11 @@ physically never leaving a chip is described here rather than enforced.
    at a CA that never proved TPM residency, with the relying party checking and then not checking; a
    real `TPM2_MakeCredential` / `TPM2_ActivateCredential` run completed **in software** with a stolen
    endorsement key; and the hostile-trust-anchor fixture that appraises completely clean.
+7. **Anonymous Membership** — compare two stable-AK quotes with an empty-`qualifiedSigner`
+   DAA-shaped attestation statement; execute issuer Setup, Join proof, credential issuance,
+   randomized Sign/Verify and basename Link; then change the credential, issuer epoch, re-Join
+   state, and private-key rogue list and recompute acceptance. The existing PCR/runtime limitation
+   remains visible: anonymous provenance is not runtime integrity.
 
 ## When to Use It
 
@@ -87,6 +117,12 @@ register it uses.
 Two more do-nots, both of which have real CVEs behind them: do not treat the `TPM_GENERATED_VALUE`
 prefix as an authenticity marker a verifier can rely on, and do not accept an attestation key
 without checking that a CA proved its TPM residency.
+
+Use DAA-style membership when a verifier needs proof that an issuer approved a platform but does
+not need one universal attestation-key identifier. Choose basenames deliberately: reuse gives the
+verifier linkability inside that scope, while a fresh one-use basename avoids that deliberate
+pseudonym reuse. Do not describe different-basename pseudonyms as universally unlinkable, and do
+not claim this browser adaptation is a TPM deployment profile.
 
 ## Live Demo
 
@@ -135,6 +171,32 @@ as TPM-resident. Same end state, different mechanism.
 **A replayed quote is a genuine quote.** Signatures do not expire. Freshness comes from the relying
 party's nonce inside the signed bytes, and from nowhere else.
 
+**DAA revocation is not one generic feature.** This lesson implements CDL's private-key rogue-list
+check only. It can revoke a platform after its `gsk` is known; an unrelated listed secret must not
+reject it. Publishing `gsk` also lets verifiers calculate that revoked platform's pseudonym for
+every known basename, sacrificing its privacy. This is not credential-serial revocation, and the
+optional signature-revocation construction is deliberately out of scope.
+
+**Issuer rotation is trust policy, not retroactive erasure.** An epoch-1 credential fails when
+checked under the epoch-2 key, but remains valid wherever the epoch-1 key is still trusted. A member
+must re-Join to obtain an epoch-2 credential.
+
+## DAA Sources and Exact Scope
+
+- [Camenisch, Drijvers, and Lehmann, full version, IACR ePrint 2016/663](https://eprint.iacr.org/2016/663.pdf),
+  especially §§4–6 and the construction in §5.1. The lab specializes it to zero application
+  attributes while retaining the `h1/gsk` platform-secret term.
+- [RFC 9380](https://www.rfc-editor.org/rfc/rfc9380.html), especially §§2.2.3, 2.2.5, 3.1, and
+  8.8.1, for hash-to-curve and domain separation.
+- Wesemeyer, Newton, Treharne, Chen, Sasse, and Whitefield,
+  ["Provably Secure ECC-Based Direct Anonymous Attestation"](https://ethz.ch/content/dam/ethz/special-interest/infk/inst-infsec/information-security-group-dam/research/publications/pub2020/eccdaaimp-asiaccs20.pdf),
+  Appendix A.2 and §§3.5–3.7, for the TPM-facing empty-`qualifiedSigner`, Quote integration, and
+  EK-bound Join context. It informs the adapter and statement shape; it is not mixed into the CDL
+  cryptographic core.
+
+Omitted features are explicit: `bsn = bottom`, application attributes, signature-based revocation,
+TPM command execution, hardware confinement, UC security, and post-quantum security.
+
 ## Real-World Usage
 
 TPM-based measured boot and attestation are deployed at scale. Windows uses PCR-bound sealing for
@@ -153,6 +215,7 @@ npm test             # the unit and known-answer suites
 npm run build        # typecheck, then a production build
 npm run test:a11y    # the axe WCAG 2.1 A/AA gate against the built site
 npm run test:e2e     # the claims suite
+npm run mutations    # focused DAA source mutations; baseline must pass first
 ```
 
 Playwright needs a browser once: `npx playwright install chromium`.
@@ -175,7 +238,9 @@ Playwright needs a browser once: `npx playwright install chromium`.
 
 ## Build & Verify
 
-Every cryptographic claim on the page is pinned to a published vector.
+Standard primitive implementations are pinned to published vectors where those vectors apply. The
+custom BLS12-381 DAA adaptation is pinned to deterministic regression vectors and independently
+checked protocol equations.
 
 | Suite | What it checks |
 |---|---|
@@ -188,16 +253,19 @@ Every cryptographic claim on the page is pinned to a published vector.
 | `src/eat/measured-component.test.ts` | RFC 10013's own worked examples, including the base64url strings the RFC prints in Figure 4 |
 | `src/boot/stages.test.ts` | The published EV_SEPARATOR digest constants |
 | `src/rats/verify.test.ts` | Every failure path, the two negative-claim fixtures, and the failure-code table |
-| `e2e/claims.spec.ts` | Does the page tell the truth — every printed extension re-derived with OpenSSL's SHA-256, the byte map tiled against the blob it describes, each failure path naming its actual cause, verdict retirement, and the NEG-1 / THREAT-1 fixtures |
+| `src/daa/protocol.test.ts` | CDL equations, Join/credential/signature negatives, canonical points/scalars, basename Link, rogue-list semantics, issuer rotation, deterministic vectors, and nonce-reuse/credential-interpolation extraction regressions |
+| `src/daa/attestation.test.ts` | Empty anonymous `qualifiedSigner`, byte-level statement vector, PCR/nonce binding, and credential/issuer/revocation lesson outcomes |
+| `e2e/claims.spec.ts` | Does the page tell the truth — every printed extension re-derived with OpenSSL's SHA-256, the byte map tiled against the blob it describes, each failure path naming its actual cause, DAA statement hash and pairing recomputed independently, verdict retirement, and the NEG-1 / THREAT-1 fixtures |
 | `e2e/a11y.spec.ts` | Zero axe WCAG 2.1 A/AA violations across every driven state, at desktop and 380px, with arithmetic contrast and non-text contrast oracles axe does not have |
 
 The GitHub Pages deploy runs all of it and is blocked if any of it fails.
 
 ## Performance
 
-Everything runs synchronously in the main thread. A full measured boot, quote and appraisal is six
-SHA-256 compressions plus one ECDSA signature and one verification — under a millisecond. The byte
-inspector renders seventeen fields. There is nothing here that needs a worker.
+Everything runs synchronously in the main thread. The original measured-boot, quote, and appraisal
+path remains small. The lazily rendered DAA panel adds several BLS12-381 pairings and is a bounded
+teaching transcript, not a throughput or hardware-performance benchmark. It runs only when the
+Anonymous Membership tab is first opened; no timing result is presented as a security claim.
 
 ---
 

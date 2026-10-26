@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { bls12_381 } from '@noble/curves/bls12-381.js';
 
 /**
  * The claims suite: does the page tell the truth?
@@ -370,6 +371,124 @@ test('7b unchecked: the only NOT RUN row in the lab, and a clean pass', async ({
   );
 });
 
+// ── A-D-08 — named DAA construction, computed membership and link policy ──
+
+const finalHexLine = async (locator: Locator): Promise<string> => {
+  const lines = (await text(locator)).split(/\s+/);
+  return lines[lines.length - 1];
+};
+
+test('the stable AK repeats while the DAA-shaped statement carries an empty signer Name', async ({
+  page,
+}) => {
+  await openTab(page, /Anonymous Membership/);
+  const first = await text(page.locator('[data-daa-value="stable-ak-one"]'));
+  const second = await text(page.locator('[data-daa-value="stable-ak-two"]'));
+  expect(first).toMatch(/^[0-9a-f]{68}$/);
+  expect(second).toBe(first);
+  await expect(page.locator('[data-daa-row="stable-ak"]')).toHaveAttribute('data-daa-row', 'stable-ak');
+  await expect(page.locator('[data-daa-row="stable-ak"] [data-result="same"]')).toContainText(
+    'SAME'
+  );
+  await expect(page.locator('[data-daa-row="anonymous"] [data-result="empty"]')).toContainText(
+    'No AK Name'
+  );
+
+  await page.locator('#panel-daa details.disclosure').first().locator('> summary').click();
+  const statement = await finalHexLine(page.locator('[data-daa-value="statement-bytes"]'));
+  const digest = await finalHexLine(page.locator('[data-daa-value="statement-digest"]'));
+  expect(statement).toMatch(/^[0-9a-f]+$/);
+  // magic || type || TPM2B_NAME.size=0
+  expect(statement.startsWith('ff54434780180000')).toBe(true);
+  expect(statement).not.toContain(first);
+  expect(createHash('sha256').update(Buffer.from(statement, 'hex')).digest('hex')).toBe(digest);
+});
+
+test('the displayed randomized issuer relation satisfies the pairing equation independently', async ({
+  page,
+}) => {
+  await openTab(page, /Anonymous Membership/);
+  await page.locator('#panel-daa details.disclosure').first().locator('> summary').click();
+  const w = bls12_381.G2.Point.fromHex(
+    await finalHexLine(page.locator('[data-daa-value="issuer-w"]'))
+  );
+  const aPrime = bls12_381.G1.Point.fromHex(
+    await finalHexLine(page.locator('[data-daa-value="a-prime"]'))
+  );
+  const aBar = bls12_381.G1.Point.fromHex(
+    await finalHexLine(page.locator('[data-daa-value="a-bar"]'))
+  );
+  const left = bls12_381.pairing(aPrime, w);
+  const right = bls12_381.pairing(aBar, bls12_381.G2.Point.BASE);
+  expect(bls12_381.fields.Fp12.eql(left, right)).toBe(true);
+  await expect(page.locator('[data-daa-table="protocol-stages"] tr[data-state="fail"]')).toHaveCount(
+    0
+  );
+});
+
+test('basename Link outcomes agree with the four current-run pseudonyms', async ({ page }) => {
+  await openTab(page, /Anonymous Membership/);
+  await page.locator('#panel-daa details.disclosure').nth(1).locator('> summary').click();
+  const serviceA1 = await finalHexLine(page.locator('[data-daa-nym="service-a-first"]'));
+  const serviceA2 = await finalHexLine(page.locator('[data-daa-nym="service-a-second"]'));
+  const researchA = await finalHexLine(page.locator('[data-daa-nym="research-a"]'));
+  const serviceB = await finalHexLine(page.locator('[data-daa-nym="service-b"]'));
+  for (const value of [serviceA1, serviceA2, researchA, serviceB]) {
+    expect(value).toMatch(/^[0-9a-f]{96}$/);
+  }
+  expect(serviceA2).toBe(serviceA1);
+  expect(researchA).not.toBe(serviceA1);
+  expect(serviceB).not.toBe(serviceA1);
+  await expect(page.locator('[data-daa-link="same-basename"] [data-result="linked"]')).toHaveText(
+    'LINKED'
+  );
+  await expect(
+    page.locator('[data-daa-link="different-basename"] [data-result="inapplicable"]')
+  ).toContainText('INAPPLICABLE');
+  await expect(
+    page.locator('[data-daa-link="different-platform"] [data-result="not-linked"]')
+  ).toHaveText('NOT LINKED');
+});
+
+test('credential, issuer epoch, re-Join, and exact rogue-list state drive the shown verdicts', async ({
+  page,
+}) => {
+  await openTab(page, /Anonymous Membership/);
+  await expect(page.locator('[data-daa-output="baseline"] .verdict-label')).toHaveText(
+    'MEMBERSHIP ACCEPTED'
+  );
+  const credentialRows = page.locator('[data-daa-table="credential-control"] tbody tr');
+  await expect(credentialRows.nth(0).locator('[data-result="pass"]')).toHaveText('PASS');
+  await expect(credentialRows.nth(1).locator('[data-result="fail"]')).toHaveText('FAIL');
+
+  await page.locator('button[data-daa-state="rotated"]').click();
+  await expect(page.locator('[data-daa-output="rotated"] .verdict-label')).toHaveText(
+    'MEMBERSHIP REJECTED'
+  );
+  await page.locator('button[data-daa-state="rejoined"]').click();
+  await expect(page.locator('[data-daa-output="rejoined"] .verdict-label')).toHaveText(
+    'MEMBERSHIP ACCEPTED'
+  );
+  await page.locator('button[data-daa-state="revoked"]').click();
+  await expect(page.locator('[data-daa-output="revoked"] .verdict-label')).toHaveText('REVOKED');
+  const rogue = page.locator('[data-daa-output="revoked"] .check').filter({
+    hasText: 'private-key rogue list',
+  });
+  await expect(rogue).toHaveAttribute('data-state', 'fail');
+  await expect(rogue).toContainText('listed-secret equals nym');
+});
+
+test('the DAA panel keeps its construction and security boundaries visible', async ({ page }) => {
+  await openTab(page, /Anonymous Membership/);
+  await expect(page.locator('#panel-daa')).toContainText('Camenisch–Drijvers–Lehmann');
+  await expect(page.locator('#panel-daa')).toContainText('authenticated Join channel');
+  await expect(page.locator('#panel-daa')).toContainText('does not implement unique-TPM admission');
+  await expect(page.locator('#panel-daa')).toContainText('variable-time');
+  await expect(page.locator('#panel-daa')).toContainText('not side-channel-hardened');
+  await expect(page.locator('#panel-daa')).toContainText('Anonymous provenance is not runtime integrity');
+  await expect(page.locator('#panel-daa')).toContainText('only after gsk becomes known');
+});
+
 // ── The magic value: signer-side refusal, verifier-side backstop ────────────
 
 test('a restricted key refuses the forgery; clearing one bit makes it sign', async ({ page }) => {
@@ -477,7 +596,7 @@ test('the tablist supports roving arrow-key navigation', async ({ page }) => {
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
 });
 
-test('primary controls meet the 44px touch target on coarse pointers', async ({ page }) => {
+test('primary controls meet the 24px WCAG 2.5.8 minimum on coarse pointers', async ({ page }) => {
   const coarse = await page.evaluate(() => matchMedia('(pointer: coarse)').matches);
   test.skip(!coarse, 'touch-target rule only applies to coarse pointers');
   const box = await page.getByRole('button', { name: 'Next ›' }).boundingBox();
