@@ -143,8 +143,8 @@ export function seededScalar(seed: Uint8Array, label: string, allowZero = false)
 /**
  * Secret-keyed deterministic nonce derivation over a complete framed context.
  * This is the lesson's reproducible analogue of fresh randomness. Binding the
- * full statement is essential: repeating a Schnorr witness across two
- * challenges reveals the witness secret by response subtraction.
+ * full statement is essential: repeating Schnorr proof randomness across two
+ * distinct challenges reveals the witness by response subtraction.
  */
 export function secretScalarFromTranscript(
   secret: bigint,

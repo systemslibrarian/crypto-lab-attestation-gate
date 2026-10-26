@@ -117,7 +117,7 @@ describe('issuer setup and the Join proof (authenticated channel assumed)', () =
     expect(verifyIssuer(wrongG2)).toBe(false);
   });
 
-  test('reusing an external issuer seed across epochs does not reuse the proof witness', () => {
+  test('reusing an external issuer seed across epochs does not reuse proof randomness', () => {
     const seed = utf8('same external issuer fixture seed');
     const first = setupIssuer(ISSUER_ID, 1, seed);
     const second = setupIssuer(ISSUER_ID, 2, seed);
@@ -166,7 +166,7 @@ describe('issuer setup and the Join proof (authenticated channel assumed)', () =
     expect(verifyJoinRequest(firstIssuer.publicKey, nonce, first.request)).toBe(true);
     expect(verifyJoinRequest(secondIssuer.publicKey, nonce, second.request)).toBe(true);
 
-    // The textbook reused-witness extraction formula must not recover gsk.
+    // The textbook extraction formula for reused proof randomness must not recover gsk.
     const c1 = joinProofChallenge(firstIssuer.publicKey, first.request);
     const c2 = joinProofChallenge(secondIssuer.publicKey, second.request);
     const extracted = mul(

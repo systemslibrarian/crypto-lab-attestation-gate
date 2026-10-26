@@ -33,7 +33,7 @@ const mutations = [
     anchor: '[seed, utf8(issuerId), u32be(epoch)]',
     replacement: '[seed, utf8(issuerId)]',
     spec: PROTOCOL_TEST,
-    test: 'reusing an external issuer seed across epochs does not reuse the proof witness',
+    test: 'reusing an external issuer seed across epochs does not reuse proof randomness',
   },
   {
     name: 'Join Fiat-Shamir nonce binding',
@@ -46,7 +46,7 @@ const mutations = [
     test: 'Join proves possession of gsk and binds the issuer nonce',
   },
   {
-    name: 'Join witness issuer context',
+    name: 'Join proof-randomness issuer context',
     file: PROTOCOL,
     anchor: '[...issuerBinding(publicKey), platformSeed, nonce, point1Bytes(request.Q)]',
     replacement: '[platformSeed, nonce, point1Bytes(request.Q)]',
@@ -71,7 +71,7 @@ const mutations = [
     test: 'the host independently checks the issued BBS+ credential',
   },
   {
-    name: 'signature witness message context',
+    name: 'signature proof-randomness message context',
     file: PROTOCOL,
     anchor: '    proofSeed,\n    utf8(policyId),\n    message,\n    basename,',
     replacement: '    proofSeed,\n    utf8(policyId),\n    basename,',
@@ -87,7 +87,7 @@ const mutations = [
     test: 'message, basename, policy, issuer, and every proof response are bound',
   },
   {
-    name: 'signature witness basename context',
+    name: 'signature proof-randomness basename context',
     file: PROTOCOL,
     anchor: '    message,\n    basename,\n    point1Bytes(credential.A),',
     replacement: '    message,\n    point1Bytes(credential.A),',
