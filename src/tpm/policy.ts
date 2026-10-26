@@ -28,6 +28,9 @@
  *   - TPM2_PolicyPCR:   Part 3 §23.7, eq (19)(20), code §23.7.3.1
  *   - TPM2_PolicyCommandCode: Part 3 §23.11, eq (27), code §23.11.3.1
  *   - TPM2_PolicyAuthorize:   Part 3 §23.16, eq (34)(35)(36), code §23.16.3.1
+ *     Its reference code passes `checkTicket.hierarchy` to
+ *     `TicketComputeVerified`; Part 4's routine selects that hierarchy's proof
+ *     with `HierarchyGetProof` rather than accepting an unrelated proof value.
  *   - Authorization checks at use time: Part 3 §5.6
  *   - Selecting Multiple PCR (the composite digest):
  *       v185 Part 1 §14.5   /   1.83 Part 1 §17.5
@@ -55,7 +58,7 @@
 import { concatBytes, bytesEqual, toHex, u8, u16be, u32be } from '../core/bytes';
 import { hmacSha256 } from '../core/hmac';
 import { sha256, SHA256_LEN } from '../core/sha256';
-import { PCR_SELECT_BYTES, TPM_ALG } from './constants';
+import { PCR_SELECT_BYTES, TPM_ALG, TPM_RH } from './constants';
 import { pcrSelectionBitmap } from './marshal';
 
 // ── Command codes. Part 2, "TPM_CC Constants" ───────────────────────────────
@@ -530,7 +533,11 @@ export interface PolicyAuthorizeInput {
   /** TPM2B_NAME content of the authorizing key: nameAlg || H(TPMT_PUBLIC). */
   keySignName: Uint8Array;
   checkTicket: VerifiedTicket;
-  /** The hierarchy proof the ticket was made under. */
+  /**
+   * The owner hierarchy proof. This bounded model retains no other hierarchy
+   * proofs, so it must reject a ticket that names a different hierarchy rather
+   * than checking that ticket under this caller-supplied value.
+   */
   proof: Uint8Array;
 }
 
@@ -575,6 +582,13 @@ export function policyAuthorize(session: PolicySession, input: PolicyAuthorizeIn
         rcParameter(TPM_RC.VALUE, 1),
         `the authority approved ${toHex(input.approvedPolicy)} but this session has reached ` +
           `${toHex(session.policyDigest)}, so the approval does not apply to this state`
+      );
+    }
+    if (input.checkTicket.hierarchy !== TPM_RH.OWNER) {
+      return fail(
+        rcParameter(TPM_RC.VALUE, 4),
+        'the verification ticket names a hierarchy this bounded model does not retain; ' +
+          'only an owner-hierarchy ticket can be checked with the modelled owner proof'
       );
     }
     const aHash = approvedPolicyHash(input.approvedPolicy, input.policyRef);

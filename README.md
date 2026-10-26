@@ -23,7 +23,7 @@ analogy to them.
 | Hash to curve | RFC 9380 | Separate DAA-specific BLS12-381 G1 domain-separation tags for the public generators and basename map |
 | Credential activation | TPM 2.0 Part 3 §12.6–12.7; TCG EK Credential Profile | Real ECDH on P-256, real `KDFa`/`KDFe`, real AES-128-CFB, real HMAC-SHA-256 |
 | Enhanced authorization | TPM 2.0 Part 3 §5.6, §23.2.3, §23.6, §23.7, §23.11, §23.16 | `TPM2_PolicyPCR`, `TPM2_PolicyOR`, `TPM2_PolicyCommandCode` and `TPM2_PolicyAuthorize`, transcribed from the reference implementation's own hashing order, with `PolicyUpdate` pinned to the published TCG EK Credential Profile `authPolicy` constant |
-| Sealed data objects | TPM 2.0 Part 1 §19.4, §19.5, §24.3.3, §24.5.3.2; Part 2 §12.2.4, §12.3.2.4, §12.3.7; Part 3 §12.1, §12.2, §12.7 (Version 185 numbering) | A `TPM_ALG_KEYEDHASH` `TPMT_PUBLIC`, `unique := H(obfuscate ‖ secret)`, and a private blob built by `KDFa`/AES-128-CFB/outer HMAC over `symIv ‖ encSensitive ‖ Name` |
+| Sealed data objects | TPM 2.0 Part 1 §19.4, §19.5, §24.3.3, §24.5.3.2; Part 2 §12.2.4, §12.3.2.4, §12.3.7; Part 3 §12.1, §12.2, §12.7 (Version 185 numbering); 1.83 Part 4 `PrivateToSensitive` / `UnwrapOuter` reference code | A `TPM_ALG_KEYEDHASH` `TPMT_PUBLIC`, `unique := H(obfuscate ‖ secret)`, and a private blob built by `KDFa`/AES-128-CFB/outer HMAC over `symIv ‖ encSensitive ‖ Name` |
 | Attestation architecture | **RFC 9334** — RATS Architecture (Informational, January 2023) | Attester → Evidence → Verifier → Attestation Result → Relying Party, with Endorsements and Reference Values as separate inputs |
 | Evidence format | **RFC 9711** — Entity Attestation Token (Standards Track, April 2025) | A real claims-set, integer-keyed in CBOR and name-keyed in JSON |
 | Measurement encoding | **RFC 10013** — EAT Measured Component (Standards Track, July 2026) | The `measured-component` data item, both serializations |
@@ -200,6 +200,8 @@ and replaces it with a digest over the AUTHORITY'S NAME and a purpose string, so
 branch says "a state this authority approved" rather than "this state". The authority's signature
 is then the entire security of that branch. Exhibit 8 shows both halves: four cases fail the
 recovery route (wrong key, wrong purpose, wrong state, no signature) and one succeeds.
+The bounded browser model retains only the owner hierarchy proof and therefore rejects tickets
+that name any other hierarchy; a real TPM selects the proof named by the ticket inside the TPM.
 
 **A policy over PCRs is not secure boot, rollback prevention, or anti-hammering.** Nothing in a
 PCR policy verifies a signature on firmware; nothing stops an old sealed blob being paired with an
@@ -251,7 +253,7 @@ npm test             # the unit and known-answer suites
 npm run build        # typecheck, then a production build
 npm run test:a11y    # the axe WCAG 2.1 A/AA gate against the built site
 npm run test:e2e     # the claims suite
-npm run mutations    # focused DAA source mutations; baseline must pass first
+npm run mutations    # named DAA and sealed-storage source mutations; baseline must pass first
 ```
 
 Playwright needs a browser once: `npx playwright install chromium`.

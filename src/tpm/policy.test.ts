@@ -476,6 +476,23 @@ describe('TPM2_PolicyAuthorize', () => {
     if (!outcome.ok) expect(outcome.rc).toBe(rcParameter(TPM_RC.VALUE, 4));
   });
 
+  it('refuses an owner-proof digest relabelled as a NULL-hierarchy ticket', () => {
+    const session = sessionAt(approved);
+    const ticket = ticketFor(approved);
+    const outcome = policyAuthorize(session, {
+      approvedPolicy: approved,
+      policyRef,
+      keySignName: keyName,
+      checkTicket: { ...ticket, hierarchy: TPM_RH.NULL },
+      proof,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.rc).toBe(rcParameter(TPM_RC.VALUE, 4));
+      expect(outcome.reason).toContain('only an owner-hierarchy ticket');
+    }
+  });
+
   it('refuses a keySign Name too short to carry a nameAlg at all', () => {
     const session = sessionAt(approved);
     const outcome = policyAuthorize(session, {

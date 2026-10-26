@@ -43,6 +43,8 @@
  *     `TPM_RC_BINDING` if public and sensitive are not cryptographically
  *     linked, with the KEYEDHASH `unique` check as its own EXAMPLE 1:
  *       Part 3 §12.2
+ *   - exact `TPM2B_SENSITIVE` consumption and the post-integrity one-block IV
+ *     check: 1.83 Part 4 `PrivateToSensitive` and `UnwrapOuter` reference code
  *   - `TPM2_Unseal`: `TPM_RC_TYPE` unless `TPM_ALG_KEYEDHASH`,
  *     `TPM_RC_ATTRIBUTES` if `restricted`, `decrypt` or `sign` is SET, Auth
  *     Role USER on `@itemHandle`: Part 3 §12.7 and its reference code §12.7.3.1
@@ -439,7 +441,7 @@ function unmarshalSensitive(bytes: Uint8Array): SealedSensitive | null {
   const read16 = (o: number): number => (bytes[o] << 8) | bytes[o + 1];
   if (bytes.length < 2) return null;
   const outer = read16(0);
-  if (bytes.length < 2 + outer) return null;
+  if (bytes.length !== 2 + outer) return null;
   const body = bytes.slice(2, 2 + outer);
   if (body.length < 8) return null;
   const sensitiveType = (body[0] << 8) | body[1];
@@ -525,6 +527,16 @@ export function tpm2Load(
         `carries ${toHex(integrityOuter)}. The HMAC covers the object's Name, so a changed byte ` +
         'anywhere in the public area breaks it too — and this check runs before anything is ' +
         'decrypted.'
+    );
+  }
+
+  // Part 4's UnwrapOuter checks integrity first, then requires symIv to be one
+  // cipher block before decrypting. Keep that refusal inside the TPM result
+  // model instead of letting the AES implementation throw on malformed input.
+  if (iv.length !== AES_BLOCK) {
+    return rcFail(
+      rcParameter(TPM_RC.VALUE, 1),
+      `symIv is ${iv.length} bytes; AES-128-CFB requires one ${AES_BLOCK}-byte block`
     );
   }
 

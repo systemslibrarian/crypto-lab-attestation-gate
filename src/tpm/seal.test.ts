@@ -7,7 +7,7 @@ import { sha256, SHA256_LEN } from '../core/sha256';
 import { TPM_ALG } from './constants';
 import { attributesToUint32, setAttributes } from './key';
 import { computeName } from './marshal';
-import { startPolicySession, TPM_CC, policyCommandCode } from './policy';
+import { policyCommandCode, rcParameter, startPolicySession, TPM_CC, TPM_RC } from './policy';
 import {
   integrityKey,
   keyedHashUnique,
@@ -326,6 +326,49 @@ describe('TPM2_Load', () => {
     const loaded = tpm2Load(PARENT, object.publicArea, priv);
     expect(loaded.ok).toBe(false);
     if (!loaded.ok) expect(loaded.rcName).toBe('TPM_RC_BINDING');
+  });
+
+  it('refuses authenticated trailing bytes after the declared TPM2B_SENSITIVE', () => {
+    // The parent holder can make the outer HMAC valid, so this reaches the
+    // exact-size check on the decrypted TPM2B rather than the integrity gate.
+    const sensitive = concatBytes(
+      marshalSensitive({
+        sensitiveType: TPM_ALG.KEYEDHASH,
+        authValue: new Uint8Array(0),
+        seedValue: OBFUSCATE,
+        data: SECRET,
+      }),
+      new Uint8Array([0xa5])
+    );
+    const enc = nobleCfb(storageKey(PARENT, object.name), IV).encrypt(sensitive);
+    const priv = concatBytes(
+      u16be(SHA256_LEN),
+      outerHmac(PARENT, IV, enc, object.name),
+      u16be(IV.length),
+      IV,
+      enc
+    );
+    const loaded = tpm2Load(PARENT, object.publicArea, priv);
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) expect(loaded.rc).toBe(rcParameter(TPM_RC.SIZE, 1));
+  });
+
+  it('refuses an authenticated wrong-size symIv without throwing', () => {
+    const shortIv = IV.slice(0, 15);
+    const enc = object.parts.encSensitive;
+    const priv = concatBytes(
+      u16be(SHA256_LEN),
+      outerHmac(PARENT, shortIv, enc, object.name),
+      u16be(shortIv.length),
+      shortIv,
+      enc
+    );
+    const loaded = tpm2Load(PARENT, object.publicArea, priv);
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.rc).toBe(rcParameter(TPM_RC.VALUE, 1));
+      expect(loaded.reason).toContain('one 16-byte block');
+    }
   });
 
   it('refuses an empty private area', () => {

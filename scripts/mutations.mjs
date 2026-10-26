@@ -216,6 +216,14 @@ const mutations = [
     test: 'refuses a ticket minted for a different authority',
   },
   {
+    name: 'PolicyAuthorize ignores the verification-ticket hierarchy',
+    file: POLICY,
+    anchor: '    if (input.checkTicket.hierarchy !== TPM_RH.OWNER) {',
+    replacement: '    if (false && input.checkTicket.hierarchy !== TPM_RH.OWNER) {',
+    spec: POLICY_TEST,
+    test: 'refuses an owner-proof digest relabelled as a NULL-hierarchy ticket',
+  },
+  {
     name: 'PolicyUpdate collapsed into a single hash',
     file: POLICY,
     anchor: '  const first = sha256(concatBytes(before, u32be(commandCode), arg2));\n  return { first, second: sha256(concatBytes(first, arg3)) };',
@@ -276,6 +284,22 @@ const mutations = [
       '  if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), keyedHashUnique(sensitive.seedValue, sensitive.data))) {',
     spec: SEAL_TEST,
     test: 'refuses a re-wrapped substitute secret with TPM_RC_BINDING, not TPM_RC_INTEGRITY',
+  },
+  {
+    name: 'TPM2_Load accepts bytes after the declared TPM2B_SENSITIVE',
+    file: SEAL,
+    anchor: '  if (bytes.length !== 2 + outer) return null;',
+    replacement: '  if (bytes.length < 2 + outer) return null;',
+    spec: SEAL_TEST,
+    test: 'refuses authenticated trailing bytes after the declared TPM2B_SENSITIVE',
+  },
+  {
+    name: 'TPM2_Load sends a wrong-size symIv into AES-CFB',
+    file: SEAL,
+    anchor: '  if (iv.length !== AES_BLOCK) {',
+    replacement: '  if (false && iv.length !== AES_BLOCK) {',
+    spec: SEAL_TEST,
+    test: 'refuses an authenticated wrong-size symIv without throwing',
   },
   {
     name: 'the post-release exposure is suppressed',
