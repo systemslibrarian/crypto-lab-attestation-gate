@@ -65,7 +65,7 @@ physically never leaving a chip is described here rather than enforced.
 The BLS12-381 choice is a Type-3 algebraic teaching instantiation, not the paper's benchmark curve,
 not a TPM 2.0 or ISO ECDAA wire profile, and not interoperable with hardware commands. Fixture
 values are reproducible: proof nonces are secret-keyed with HMAC-SHA-256 and bind the complete
-framed context so reusing an external fixture seed does not repeat a Schnorr witness. The
+framed context so reusing an external fixture seed does not repeat Schnorr proof randomness. The
 JavaScript bigint/group operations remain variable-time and are not side-channel-hardened secret
 handling. All fixture seeds ship in the source; “secret” describes the protocol role, not secrecy
 enforced against someone inspecting the browser bundle.
@@ -253,7 +253,7 @@ checked protocol equations.
 | `src/eat/measured-component.test.ts` | RFC 10013's own worked examples, including the base64url strings the RFC prints in Figure 4 |
 | `src/boot/stages.test.ts` | The published EV_SEPARATOR digest constants |
 | `src/rats/verify.test.ts` | Every failure path, the two negative-claim fixtures, and the failure-code table |
-| `src/daa/protocol.test.ts` | CDL equations, Join/credential/signature negatives, canonical points/scalars, basename Link, rogue-list semantics, issuer rotation, deterministic vectors, and nonce-reuse/credential-interpolation extraction regressions |
+| `src/daa/protocol.test.ts` | CDL equations, Join/credential/signature negatives, canonical points/scalars, basename Link, rogue-list semantics, issuer rotation, deterministic vectors, and proof-randomness/credential-interpolation extraction regressions |
 | `src/daa/attestation.test.ts` | Empty anonymous `qualifiedSigner`, byte-level statement vector, PCR/nonce binding, and credential/issuer/revocation lesson outcomes |
 | `e2e/claims.spec.ts` | Does the page tell the truth — every printed extension re-derived with OpenSSL's SHA-256, the byte map tiled against the blob it describes, each failure path naming its actual cause, DAA statement hash and pairing recomputed independently, verdict retirement, and the NEG-1 / THREAT-1 fixtures |
 | `e2e/a11y.spec.ts` | Zero axe WCAG 2.1 A/AA violations across every driven state, at desktop and 380px, with arithmetic contrast and non-text contrast oracles axe does not have |
