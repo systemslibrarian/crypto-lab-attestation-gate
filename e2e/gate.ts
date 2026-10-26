@@ -37,7 +37,7 @@ export const REFLOW = { width: 280, height: 800 };
  *
  *  2. IT FORCED EVERY PANEL VISIBLE FROM SCRIPT. The old drive stripped every
  *     `[hidden]` attribute and set every `<details>.open` by JS before its only
- *     scan. Stripping `hidden` puts all six tabpanels on screen AT ONCE — a
+ *     scan. Stripping `hidden` puts all seven tabpanels on screen AT ONCE — a
  *     rendering no reader can reach and axe then scans instead of the real one
  *     — and script-opening the disclosures means the SHUT state, which is what
  *     every reader arrives at, was never scanned at all. This gate switches
@@ -277,7 +277,7 @@ export async function boot(page: Page, theme: 'dark'): Promise<void> {
 
   // ── The page really rendered ────────────────────────────────────────────
   await expect(page.locator('main')).toHaveCount(1);
-  await expect(page.locator('.tab-btn')).toHaveCount(6);
+  await expect(page.locator('.tab-btn')).toHaveCount(7);
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('h1')).toHaveText('Attestation Gate');
 
@@ -301,13 +301,13 @@ export async function boot(page: Page, theme: 'dark'): Promise<void> {
   // ── The arrival state: Measured Boot active and stepped to zero ─────────
   // `renderBootPanel` runs at mount, so first paint includes the four
   // registers at their reset values and the six editable stage rows. The other
-  // five panels are lazily rendered: hidden AND EMPTY until their tab is first
+  // six panels are lazily rendered: hidden AND EMPTY until their tab is first
   // activated — asserted, because "empty" is this lab's tell that a renderer
   // threw (see `watchPageErrors`).
   await expect(page.locator('#panel-boot .step-progress')).toHaveText('Step 0 / 6');
   await expect(page.locator('#panel-boot .pcr-row')).toHaveCount(4);
   await expect(page.locator('#panel-boot .stages .stage')).toHaveCount(6);
-  for (const id of ['quote', 'magic', 'break', 'time', 'signature']) {
+  for (const id of ['quote', 'magic', 'break', 'time', 'signature', 'daa']) {
     await expect(page.locator(`#panel-${id}`)).toBeHidden();
     await expect(page.locator(`#panel-${id}`)).toBeEmpty();
   }
@@ -424,7 +424,7 @@ export async function expectScrollersReachable(page: Page, label: string): Promi
  * and the focus ring lands nowhere. `display: none` and `visibility: hidden`
  * DO remove an element from the tab order, so those are skipped rather than
  * flagged — the failure is specifically the invisible-but-tabbable pair. The
- * `hidden` tabpanels here take the `display: none` route, which is why five
+ * `hidden` tabpanels here take the `display: none` route, which is why six
  * panels' worth of buttons are legitimately absent from the tab order.
  *
  * Off-screen-but-focusable is the WCAG-sanctioned skip-link idiom and is
@@ -713,12 +713,12 @@ async function openDisclosure(page: Page, panel: string, index: number): Promise
  * Five things shape this drive:
  *
  *  - THE ARRIVAL STATE IS SCANNED FIRST, exactly as a reader gets it:
- *    Measured Boot active at step 0, five panels hidden and unrendered, every
+ *    Measured Boot active at step 0, six panels hidden and unrendered, every
  *    disclosure shut. The gate this replaces force-revealed all of it before
  *    its only scan.
  *
  *  - EVERY PANEL IS RENDERED LAZILY, so a tab that is never clicked is a panel
- *    that is never even IN the DOM. Each of the six is activated through its
+ *    that is never even IN the DOM. Each of the seven is activated through its
  *    real tab button and scanned in its own driven states.
  *
  *  - EVERY VERDICT TONE, IN EVERY PANEL THAT PRODUCES ONE. The three tones —
@@ -740,7 +740,7 @@ async function openDisclosure(page: Page, panel: string, index: number): Promise
 export async function driveAllStates(page: Page, theme: string): Promise<void> {
   const scanAt = (s: string): Promise<void> => scan(page, `${theme} / ${s}`);
 
-  await scanAt('arrival: Measured Boot at step 0, five panels unrendered, disclosures shut');
+  await scanAt('arrival: Measured Boot at step 0, six panels unrendered, disclosures shut');
 
   // ── The shared skip link, focused ───────────────────────────────────────
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
@@ -904,9 +904,41 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   await openDisclosure(page, '#panel-signature', 0);
   await scanAt('Signature: THREAT-1 — a hostile anchor, and a completely clean appraisal');
 
+  // ── 7. Anonymous Membership ─────────────────────────────────────────────
+  await openTab(page, /Anonymous Membership/, '#panel-daa');
+  await expect(page.locator('#panel-daa [data-daa-output="baseline"] .verdict[data-tone="ok"]')).toContainText(
+    'MEMBERSHIP ACCEPTED'
+  );
+  await expect(page.locator('#panel-daa [data-daa-link="same-basename"]')).toContainText('LINKED');
+  await expect(page.locator('#panel-daa [data-daa-link="different-basename"]')).toContainText(
+    'INAPPLICABLE'
+  );
+  await scanAt('DAA: stable AK identity compared with accepted anonymous issuer membership');
+
+  await page.locator('#panel-daa button[data-daa-state="rotated"]').click();
+  await expect(page.locator('#panel-daa [data-daa-output="rotated"] .verdict[data-tone="bad"]')).toContainText(
+    'MEMBERSHIP REJECTED'
+  );
+  await scanAt('DAA: the old credential rejected under a new issuer epoch');
+
+  await page.locator('#panel-daa button[data-daa-state="rejoined"]').click();
+  await expect(page.locator('#panel-daa [data-daa-output="rejoined"] .verdict[data-tone="ok"]')).toContainText(
+    'MEMBERSHIP ACCEPTED'
+  );
+  await scanAt('DAA: re-Join under the new issuer epoch accepted');
+
+  await page.locator('#panel-daa button[data-daa-state="revoked"]').click();
+  await expect(page.locator('#panel-daa [data-daa-output="revoked"] .verdict[data-tone="bad"]')).toContainText(
+    'REVOKED'
+  );
+  await scanAt('DAA: the exact exposed platform secret rejected by the private-key rogue list');
+
+  for (let i = 0; i < 4; i++) await openDisclosure(page, '#panel-daa', i);
+  await scanAt('DAA: proof outputs, pseudonyms, revocation teaching view, and source limits open');
+
   // ── Hover, which persists after a click ─────────────────────────────────
-  await sigButtons.first().hover();
-  await scanAt('a scenario button hovered');
+  await page.locator('#panel-daa button[data-daa-state="revoked"]').hover();
+  await scanAt('a DAA scenario button hovered');
 
   await page.getByRole('tab', { name: /Measured Boot/ }).hover();
   await scanAt('an inactive tab hovered — its surface-3 fill repainted');

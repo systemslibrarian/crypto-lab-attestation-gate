@@ -14,7 +14,7 @@ import {
  *
  * The lab is driven along everything it teaches: the arrival state, where
  * Measured Boot sits at step 0 with four registers at their reset values and
- * the other five tabpanels are hidden and UNRENDERED; the shared skip link
+ * the other six tabpanels are hidden and UNRENDERED; the shared skip link
  * focused; the boot stepper at its first extension, at its end, stepped back
  * and reset; one measured byte edited so the diverged-register alarm renders,
  * and reverted; all three boot disclosures open including two scrollable
@@ -25,7 +25,9 @@ import {
  * rejection scenario with its failure code, its diverged register and its
  * named stage; the time-of-use climax in its ATTESTED — AND COMPROMISED state;
  * both Act 7b branches including the only NOT RUN check row in the lab and the
- * credential-activation trace; the THREAT-1 hostile-anchor fixture; three
+ * credential-activation trace; the THREAT-1 hostile-anchor fixture; the DAA
+ * issuer/Join/credential proof, three Link outcomes, issuer rotation, re-Join,
+ * and rogue-list states; three
  * hover states; two focus rings; and a focused scroll region. Every one of
  * those states is scanned, at desktop and phone width.
  *

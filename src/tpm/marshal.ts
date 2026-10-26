@@ -157,7 +157,10 @@ export interface AttestInput {
   /** Almost always TPM_GENERATED_VALUE. Act 2a is the reason it is a parameter. */
   magic: number;
   type: number;
-  /** The Qualified Name of the signing key, already TPM2B content (alg || digest). */
+  /**
+   * The Qualified Name of the signing key, already TPM2B content (alg || digest).
+   * Anonymous signing uses an empty buffer; the DAA lesson exercises that case.
+   */
   qualifiedSigner: Uint8Array;
   /** Caller-supplied qualifying data — the relying party's nonce. */
   extraData: Uint8Array;
@@ -179,7 +182,8 @@ const T = {
   qualifiedSigner:
     'The signing key’s Qualified Name: nameAlg followed by H(QN(parent) || Name(key)). It ' +
     'identifies not just the key but its position in a hierarchy on one specific TPM, which is ' +
-    'what a relying party matches against its trust anchors.',
+    'what a relying party matches against its trust anchors. In an anonymous-signing attestation ' +
+    'this TPM2B is empty so the statement does not disclose that stable AK Name.',
   extraDataSize: 'UINT16 size prefix of the TPM2B_DATA that follows.',
   extraData:
     'Caller-supplied qualifying data. In a challenge/response attestation this is the relying ' +
@@ -254,7 +258,10 @@ export function marshalAttest(input: AttestInput): Marshalled {
     path: 'qualifiedSigner.name',
     label: 'qualifiedSigner.name',
     type: 'TPM2B_NAME',
-    value: `${TPM_ALG_NAMES[(input.qualifiedSigner[0] << 8) | input.qualifiedSigner[1]] ?? 'alg?'} + ${input.qualifiedSigner.length - 2}-byte digest`,
+    value:
+      input.qualifiedSigner.length === 0
+        ? 'Empty Buffer (anonymous signing; no stable AK Name)'
+        : `${TPM_ALG_NAMES[(input.qualifiedSigner[0] << 8) | input.qualifiedSigner[1]] ?? 'alg?'} + ${input.qualifiedSigner.length - 2}-byte digest`,
     note: T.qualifiedSigner,
     depth: 1,
   });

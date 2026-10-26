@@ -1,5 +1,5 @@
 /**
- * The page: hero, the plain-language on-ramp, the honest-scoping card, six
+ * The page: hero, the plain-language on-ramp, the honest-scoping card, seven
  * tabbed acts, the failure-code reference, and the footer.
  *
  * Panels render lazily on first activation and are `hidden` until then, which
@@ -17,6 +17,7 @@ import { renderMagicPanel } from './panels/magic';
 import { renderBreakPanel } from './panels/breakit';
 import { renderTimeOfUsePanel } from './panels/timeofuse';
 import { renderSignaturePanel } from './panels/signature';
+import { renderDaaPanel } from './panels/daa';
 
 interface Tab {
   id: string;
@@ -31,6 +32,7 @@ const TABS: Tab[] = [
   { id: 'break', label: 'Break It', render: renderBreakPanel },
   { id: 'time', label: 'Time of Use', render: renderTimeOfUsePanel },
   { id: 'signature', label: 'Whose Signature', render: renderSignaturePanel },
+  { id: 'daa', label: 'Anonymous Membership', render: renderDaaPanel },
 ];
 
 export function mount(root: HTMLElement): void {
@@ -42,11 +44,14 @@ function hero(): HTMLElement {
   return el('header', { class: 'cl-hero' }, [
     el('div', { class: 'cl-hero-main' }, [
       el('h1', { class: 'cl-hero-title' }, ['Attestation Gate']),
-      el('p', { class: 'cl-hero-sub' }, ['Remote attestation · RFC 9334 · TPM 2.0 Quote']),
+      el('p', { class: 'cl-hero-sub' }, [
+        'Remote attestation · RFC 9334 · TPM 2.0 Quote · Direct Anonymous Attestation',
+      ]),
       el('p', { class: 'cl-hero-desc' }, [
         'Extends a real measured boot into PCRs, signs a byte-exact TPMS_ATTEST over them, and ' +
           'appraises that quote against reference values — including the run where every check ' +
-          'passes honestly and the machine is owned anyway.',
+          'passes honestly and the machine is owned anyway. Then it replaces the stable AK name ' +
+          'with a computed issuer-membership proof and shows exactly where linkability returns.',
       ]),
     ]),
     el('aside', { class: 'cl-hero-why', 'aria-label': 'Why it matters' }, [
@@ -109,6 +114,9 @@ function scoping(): HTMLElement {
               'against NIST SP 800-38A), real HMAC.',
             'Deterministic CBOR per RFC 8949, EAT claims per RFC 9711, measured components per ' +
               'RFC 10013 — checked against the base64url strings the RFC itself prints.',
+            'The no-application-attribute CDL Pi_DAA+ equations over a Type-3 BLS12-381 pairing: ' +
+              'Setup, Join proof, BBS+ credential, randomized Sign/Verify, basename Link, and the ' +
+              'construction’s private-key rogue-list check.',
           ].map((t) => el('li', { role: 'listitem' }, [t]))
         ),
       ]),
@@ -132,6 +140,9 @@ function scoping(): HTMLElement {
               'Name, and the two TCG policy assertions — rather than encoded and chain-verified.',
             'The failure code names are this lab’s own vocabulary. There is no standard registry, ' +
               'and every code below carries what real implementations actually call it.',
+            'The DAA platform secret and issuer are software fixtures. BLS12-381 is an algebraic ' +
+              'instantiation, not a TPM/ISO ECDAA profile; no TPM command or hardware boundary is ' +
+              'present, and the JavaScript arithmetic is not side-channel hardened.',
           ].map((t) => el('li', { role: 'listitem' }, [t]))
         ),
       ]),
