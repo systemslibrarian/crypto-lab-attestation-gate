@@ -122,6 +122,8 @@ export function renderSealedPanel(root: HTMLElement): void {
 
   const reference = referenceSealedObject();
   const out = el('div', { class: 'seal-out' });
+  const resultHost = el('div', { class: 'seal-result-host' });
+  const intent = el('p', { class: 'card-lede', role: 'status', 'aria-live': 'polite' });
   const scenarioButtons: HTMLButtonElement[] = [];
 
   const firmwareInput = el('input', {
@@ -281,33 +283,16 @@ export function renderSealedPanel(root: HTMLElement): void {
     ]);
   }
 
+  // ONLY the result region is redrawn. The controls above it are built once and
+  // never removed, because `clear()`-ing a subtree that contains the focused
+  // element blurs it — so redrawing the whole panel on every keystroke made
+  // the measured-value field lose focus after one character and the act
+  // unusable without a pointer. The claims suite drives this act by keyboard
+  // alone, which is what found it.
   function draw(): void {
     drawScenarioButtons();
-    clear(out).append(
-      el('span', { class: 'eyebrow' }, ['1 · What the secret is sealed to']),
-      el('p', { class: 'card-lede' }, [
-        `A synthetic value is sealed to PCRs {${SEALED_PCRS.join(', ')}} — the same static boot ` +
-          'set the quote in Act 2 selects, so the chain you stepped through in Act 1 is the chain ' +
-          'this policy checks.',
-      ]),
-      pcrStrip(reference.sealed.pcrs.map((p) => ({ pcr: p.pcr, value: p.value }))),
-      hexRow('composite digest of the sealed state', toHex(reference.sealed.digestTPM)),
-      el('div', { 'data-seal-ref': 'authPolicy' }, [
-        hexRow('authPolicy stored in the sealed object', toHex(reference.plan.authPolicy)),
-      ]),
-      el('span', { class: 'eyebrow' }, ['2 · Choose a case']),
-      el('div', { class: 'btn-row' }, scenarioButtons),
-      el('p', { class: 'card-lede', role: 'status', 'aria-live': 'polite' }, [selected.intent]),
-      el('label', { class: 'field', for: 'seal-firmware' }, [
-        el('span', { class: 'field-label' }, [
-          'The measured firmware value at unseal time — edit it and the registers move',
-        ]),
-        firmwareInput,
-      ]),
-      el('div', { class: 'btn-row' }, [runButton]),
-      el('span', { class: 'eyebrow' }, ['3 · What happened']),
-      resultRegion()
-    );
+    intent.textContent = selected.intent;
+    clear(resultHost).append(resultRegion());
   }
 
   SCENARIOS.forEach((scenario) => {
@@ -318,6 +303,32 @@ export function renderSealedPanel(root: HTMLElement): void {
       })
     );
   });
+
+  out.append(
+    el('span', { class: 'eyebrow' }, ['1 · What the secret is sealed to']),
+    el('p', { class: 'card-lede' }, [
+      `A synthetic value is sealed to PCRs {${SEALED_PCRS.join(', ')}} — the same static boot ` +
+        'set the quote in Act 2 selects, so the chain you stepped through in Act 1 is the chain ' +
+        'this policy checks.',
+    ]),
+    pcrStrip(reference.sealed.pcrs.map((p) => ({ pcr: p.pcr, value: p.value }))),
+    hexRow('composite digest of the sealed state', toHex(reference.sealed.digestTPM)),
+    el('div', { 'data-seal-ref': 'authPolicy' }, [
+      hexRow('authPolicy stored in the sealed object', toHex(reference.plan.authPolicy)),
+    ]),
+    el('span', { class: 'eyebrow' }, ['2 · Choose a case']),
+    el('div', { class: 'btn-row' }, scenarioButtons),
+    intent,
+    el('label', { class: 'field', for: 'seal-firmware' }, [
+      el('span', { class: 'field-label' }, [
+        'The measured firmware value at unseal time — edit it and the registers move',
+      ]),
+      firmwareInput,
+    ]),
+    el('div', { class: 'btn-row' }, [runButton]),
+    el('span', { class: 'eyebrow' }, ['3 · What happened']),
+    resultHost
+  );
 
   clear(root).append(
     card('Sealing asks the chip a different question', [

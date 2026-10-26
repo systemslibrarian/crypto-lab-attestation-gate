@@ -1059,3 +1059,70 @@ test('the sealed-storage act keeps its non-claims visible', async ({ page }) => 
   await sources.locator('> summary').click();
   await expect(sources).toContainText('DEPRECATED in Version 185');
 });
+
+test('the sealed-storage act is operable by keyboard alone', async ({ page }) => {
+  // Keyboard operation of the controls this act adds, driven with no pointer
+  // events at all: tab to the tablist, arrow to the eighth tab, tab into the
+  // panel, reach a case button and the Run button, and activate both with the
+  // keys a reader would actually press.
+  await page.goto('.');
+  await expect(page.locator('#panel-boot .step-progress')).toHaveText('Step 0 / 6');
+
+  await page.keyboard.press('Tab'); // the shared skip link
+  await expect(page.locator('a.cl-skip-link')).toBeFocused();
+
+  // Walk forward until the tablist's active tab takes focus, then drive the
+  // tablist with End — the roving-tabindex contract — to reach the last tab.
+  const firstTab = page.getByRole('tab').first();
+  for (let i = 0; i < 12 && !(await firstTab.evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(firstTab).toBeFocused();
+  await page.keyboard.press('End');
+  const sealedTab = page.getByRole('tab', { name: /Sealed Storage/ });
+  await expect(sealedTab).toHaveAttribute('aria-selected', 'true');
+  await expect(sealedTab).toBeFocused();
+  await expect(page.locator('#panel-sealed')).not.toBeEmpty();
+
+  // Reach a case button by tabbing, and press it with Space.
+  const tamper = page.locator('#panel-sealed button[data-scenario="tamper-private"]');
+  for (let i = 0; i < 40 && !(await tamper.evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(tamper).toBeFocused();
+  await page.keyboard.press(' ');
+  await expect(tamper).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('NOT RUN');
+
+  // Type into the measured-value field, which must retire the verdict, then
+  // reach Run and press Enter.
+  const field = page.locator('#seal-firmware');
+  for (let i = 0; i < 40 && !(await field.evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(field).toBeFocused();
+  await page.keyboard.type('X');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-note')).toContainText(
+    'measured firmware value was edited'
+  );
+
+  const run = page.locator('#panel-sealed').getByRole('button', { name: 'Run this case' });
+  for (let i = 0; i < 10 && !(await run.evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(run).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('REFUSED');
+  await expect(page.locator('#panel-sealed .seal-result .code-name').first()).toHaveText(
+    'TPM_RC_INTEGRITY'
+  );
+
+  // A disclosure opens from its own summary with Enter, so the depth is
+  // reachable without a pointer too.
+  const teaching = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'Teaching view',
+  });
+  await teaching.locator('> summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(teaching).toHaveAttribute('open', '');
+});
