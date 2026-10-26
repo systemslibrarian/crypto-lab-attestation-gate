@@ -189,7 +189,7 @@ must re-Join to obtain an epoch-2 credential.
 - [RFC 9380](https://www.rfc-editor.org/rfc/rfc9380.html), especially §§2.2.3, 2.2.5, 3.1, and
   8.8.1, for hash-to-curve and domain separation.
 - Wesemeyer, Newton, Treharne, Chen, Sasse, and Whitefield,
-  ["Provably Secure ECC-Based Direct Anonymous Attestation"](https://ethz.ch/content/dam/ethz/special-interest/infk/inst-infsec/information-security-group-dam/research/publications/pub2020/eccdaaimp-asiaccs20.pdf),
+  ["Formal Analysis and Implementation of a TPM 2.0-based Direct Anonymous Attestation Scheme"](https://ethz.ch/content/dam/ethz/special-interest/infk/inst-infsec/information-security-group-dam/research/publications/pub2020/eccdaaimp-asiaccs20.pdf),
   Appendix A.2 and §§3.5–3.7, for the TPM-facing empty-`qualifiedSigner`, Quote integration, and
   EK-bound Join context. It informs the adapter and statement shape; it is not mixed into the CDL
   cryptographic core.
