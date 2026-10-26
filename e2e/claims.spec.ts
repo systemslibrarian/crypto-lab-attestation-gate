@@ -603,3 +603,459 @@ test('primary controls meet the 24px WCAG 2.5.8 minimum on coarse pointers', asy
   expect(box).not.toBeNull();
   expect(box!.height).toBeGreaterThanOrEqual(24);
 });
+
+// ── Act 8 — Sealed Storage ──────────────────────────────────────────────────
+//
+// The same rule as everywhere else in this file: every expectation compares
+// two values the PAGE printed, or re-derives a printed value with OpenSSL's
+// SHA-256 rather than the hand-rolled one the page uses.
+
+async function openSealed(page: Page): Promise<void> {
+  await openTab(page, /Sealed Storage/);
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toContainText('NOT RUN');
+}
+
+async function runSealedCase(page: Page, id: string): Promise<void> {
+  await page.locator(`#panel-sealed button[data-scenario="${id}"]`).click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toContainText('NOT RUN');
+  await page.locator('#panel-sealed').getByRole('button', { name: 'Run this case' }).click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).not.toContainText('NOT RUN');
+}
+
+const sealHex = async (page: Page, key: string): Promise<string> => {
+  const printed = await text(page.locator(`#panel-sealed [data-seal-run="${key}"] .hexblock`));
+  expect(printed, key).toMatch(/^[0-9a-f]{64}$/);
+  return printed;
+};
+
+test('every policy assertion the page prints really is SHA-256(old || assertion)', async ({
+  page,
+}) => {
+  await openSealed(page);
+  // The policy-derivation disclosure, opened the way a reader opens it.
+  const policy = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'How the policy digest was built',
+  });
+  await policy.locator('> summary').click();
+
+  let examined = 0;
+  let resetting = 0;
+  for (const branch of ['branchA', 'branchB', 'common']) {
+    const steps = page.locator(`#panel-sealed [data-seal-policy="${branch}"] .stage`);
+    const count = await steps.count();
+    expect(count, branch).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const step = steps.nth(i);
+      const resets = (await step.getAttribute('data-seal-resets')) === 'true';
+      const before = await text(step.locator('[data-seal-hash="before"]'));
+      const preimages = await step.locator('[data-seal-hash="preimage"]').allTextContents();
+      const digests = await step.locator('[data-seal-hash="digest"]').allTextContents();
+      expect(before, `${branch} step ${i} before`).toMatch(/^[0-9a-f]{64}$/);
+      expect(preimages.length, `${branch} step ${i} hash count`).toBe(digests.length);
+      expect(preimages.length, `${branch} step ${i} hash count`).toBeGreaterThan(0);
+
+      // A command either extends the digest it printed, or it says it resets
+      // and starts from a Zero Digest. There is no third option, and the page
+      // has to be in one of the two states it names.
+      if (resets) {
+        expect(preimages[0].startsWith('0'.repeat(64)), `${branch} step ${i} reset prefix`).toBe(
+          true
+        );
+        resetting += 1;
+      } else {
+        expect(preimages[0].startsWith(before), `${branch} step ${i} preimage prefix`).toBe(true);
+      }
+
+      for (let h = 0; h < preimages.length; h++) {
+        const preimage = preimages[h].trim();
+        const digest = digests[h].trim();
+        expect(digest, `${branch} step ${i} hash ${h}`).toMatch(/^[0-9a-f]{64}$/);
+        // Independent re-derivation with OpenSSL, not the page's SHA-256.
+        expect(sha256Hex(preimage), `${branch} step ${i} hash ${h}`).toBe(digest);
+        // And the chain is a chain: each hash after the first starts from the
+        // digest the one before it produced.
+        if (h > 0) {
+          expect(
+            preimage.startsWith(digests[h - 1].trim()),
+            `${branch} step ${i} hash ${h} chains`
+          ).toBe(true);
+        }
+      }
+      examined += 1;
+    }
+  }
+  expect(examined).toBeGreaterThanOrEqual(5);
+  // Two of these commands really do reset, so the branch above is exercised
+  // rather than merely present.
+  expect(resetting).toBeGreaterThanOrEqual(2);
+});
+
+test('the two-hash PolicyUpdate is shown as two hashes, not collapsed into one', async ({
+  page,
+}) => {
+  await openSealed(page);
+  const policy = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'How the policy digest was built',
+  });
+  await policy.locator('> summary').click();
+  const authorize = page
+    .locator('#panel-sealed [data-seal-policy="branchB"] .stage')
+    .filter({ hasText: 'TPM2_PolicyAuthorize' });
+  await expect(authorize).toHaveCount(1);
+  await expect(authorize).toHaveAttribute('data-seal-resets', 'true');
+  const preimages = await authorize.locator('[data-seal-hash="preimage"]').allTextContents();
+  const digests = await authorize.locator('[data-seal-hash="digest"]').allTextContents();
+  expect(preimages).toHaveLength(2);
+  // Hash 1 is 0…0 || TPM_CC_PolicyAuthorize || keySign.name, and the Name is
+  // 34 bytes, so the preimage is exactly 32 + 4 + 34 = 70 bytes.
+  expect(preimages[0].slice(0, 64)).toBe('0'.repeat(64));
+  expect(preimages[0].slice(64, 72)).toBe('0000016a');
+  expect(preimages[0].length / 2).toBe(70);
+  // Hash 2 is that digest || policyRef, and nothing else.
+  expect(preimages[1].startsWith(digests[0].trim())).toBe(true);
+  const policyRefHex = preimages[1].slice(64);
+  expect(Buffer.from(policyRefHex, 'hex').toString('utf8')).toBe(
+    'attestation-gate/seal-recovery/v1'
+  );
+  expect(sha256Hex(preimages[1])).toBe(digests[1].trim());
+});
+
+test('the policy a branch reaches is the digest the OR list then consumes', async ({ page }) => {
+  await openSealed(page);
+  const policy = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'How the policy digest was built',
+  });
+  await policy.locator('> summary').click();
+
+  const lastAfter = async (branch: string): Promise<string> => {
+    const digests = await page
+      .locator(`#panel-sealed [data-seal-policy="${branch}"] [data-seal-hash="digest"]`)
+      .allTextContents();
+    return digests[digests.length - 1].trim();
+  };
+  const branchA = await lastAfter('branchA');
+  const branchB = await lastAfter('branchB');
+
+  // The OR step's preimage is 0…0 || TPM_CC_PolicyOR || D_A || D_B, so both
+  // branch digests the page printed above must appear in it, in that order.
+  const orStep = page.locator('#panel-sealed [data-seal-policy="common"] .stage').first();
+  const orPreimage = await text(orStep.locator('[data-seal-hash="preimage"]'));
+  expect(orPreimage).toBe('0'.repeat(64) + '00000171' + branchA + branchB);
+
+  // And the authPolicy the object stores is the end of that same chain.
+  const finalAfter = await lastAfter('common');
+  const stored = await text(page.locator('#panel-sealed [data-seal-ref="authPolicy"] .hexblock'));
+  const derived = await text(
+    page.locator('#panel-sealed [data-seal-ref="authPolicy-derived"] .hexblock')
+  );
+  expect(stored).toBe(finalAfter);
+  expect(derived).toBe(finalAfter);
+});
+
+test('the sealed object’s byte map tiles the structure its Name is a digest of', async ({
+  page,
+}) => {
+  await openSealed(page);
+  const map = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'public area, field by field',
+  });
+  await map.locator('> summary').click();
+
+  const fields = page.locator('#panel-sealed .bytemap .byte-field');
+  const count = await fields.count();
+  expect(count).toBe(8);
+
+  let joined = '';
+  let expectedOffset = 0;
+  for (let i = 0; i < count; i++) {
+    const hex = await text(fields.nth(i).locator('.byte-hex'));
+    const meta = await text(fields.nth(i).locator('.byte-offset'));
+    const [, offset, length] = /offset (\d+) · (\d+) byte/.exec(meta)!;
+    expect(Number(offset), `field ${i} offset`).toBe(expectedOffset);
+    expect(hex.length / 2, `field ${i} length`).toBe(Number(length));
+    joined += hex;
+    expectedOffset += Number(length);
+  }
+
+  // Independent re-derivation: Name = nameAlg || H(publicArea), with the
+  // publicArea taken from the map's own field bytes and hashed by OpenSSL.
+  const name = await text(page.locator('#panel-sealed [data-seal-ref="name"] .hexblock'));
+  expect(name).toBe(`000b${sha256Hex(joined)}`);
+  // The first field really is the type the page names.
+  expect(joined.slice(0, 4)).toBe('0008');
+  await expect(fields.first().locator('.byte-value')).toHaveText('TPM_ALG_KEYEDHASH');
+});
+
+test('the composite digest the run prints is SHA-256 over the registers it listed', async ({
+  page,
+}) => {
+  await openSealed(page);
+  await runSealedCase(page, 'matching');
+  const rows = page.locator('#panel-sealed .seal-result .pcr-row');
+  await expect(rows).toHaveCount(4);
+  let concatenated = '';
+  for (let i = 0; i < 4; i++) {
+    const value = await text(rows.nth(i).locator('.pcr-value'));
+    expect(value).toMatch(/^[0-9a-f]{64}$/);
+    concatenated += value;
+  }
+  expect(sha256Hex(concatenated)).toBe(await sealHex(page, 'current-digest'));
+});
+
+test('a matching state releases, and the digests on screen agree that it matched', async ({
+  page,
+}) => {
+  await openSealed(page);
+  await runSealedCase(page, 'matching');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('RELEASED');
+  expect(await sealHex(page, 'current-digest')).toBe(await sealHex(page, 'sealed-digest'));
+  expect(await sealHex(page, 'session-digest')).toBe(await sealHex(page, 'auth-policy'));
+  await expect(page.locator('#panel-sealed .seal-result .check[data-state="fail"]')).toHaveCount(0);
+  await expect(page.locator('#panel-sealed .seal-result .codes')).toHaveCount(0);
+});
+
+test('the firmware-change refusal is computed from the registers, not asserted', async ({
+  page,
+}) => {
+  await openSealed(page);
+  await runSealedCase(page, 'firmware-update');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('REFUSED');
+
+  // The two digests on screen really do differ, and the register strip marks
+  // exactly the one register the changed stage extends.
+  expect(await sealHex(page, 'current-digest')).not.toBe(await sealHex(page, 'sealed-digest'));
+  const changed = page.locator('#panel-sealed .seal-result .pcr-row[data-changed="true"]');
+  await expect(changed).toHaveCount(1);
+  await expect(changed.locator('.pcr-name')).toHaveText('PCR 0');
+
+  // The failing row carries the response code, and the code is in the act's
+  // own reference table.
+  const failing = page.locator('#panel-sealed .seal-result .check[data-state="fail"]');
+  await expect(failing).not.toHaveCount(0);
+  await expect(failing.first().locator('.check-code')).toContainText('TPM_RC_VALUE');
+  await expect(page.locator('#panel-sealed .seal-result .code-name').first()).toHaveText(
+    'TPM_RC_VALUE'
+  );
+});
+
+test('every response code a sealed-storage case emits has a row in its reference table', async ({
+  page,
+}) => {
+  await openSealed(page);
+  const listed = new Set(
+    (await page.locator('#panel-sealed table tbody tr td:first-child code').allTextContents()).map(
+      (t) => t.trim()
+    )
+  );
+  expect(listed.size).toBeGreaterThan(5);
+
+  const cases = await page.locator('#panel-sealed button[data-scenario]').count();
+  expect(cases).toBeGreaterThanOrEqual(10);
+  const ids = await page
+    .locator('#panel-sealed button[data-scenario]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-scenario')!));
+
+  for (const id of ids) {
+    await runSealedCase(page, id);
+    const emitted = await page.locator('#panel-sealed .seal-result .code-name').allTextContents();
+    for (const code of emitted) {
+      expect(listed.has(code.trim()), `${id} emitted ${code} with no table row`).toBe(true);
+    }
+  }
+});
+
+test('an authorized recovery releases through the other branch, with the same authPolicy', async ({
+  page,
+}) => {
+  await openSealed(page);
+  await runSealedCase(page, 'matching');
+  const authPolicyA = await sealHex(page, 'auth-policy');
+
+  await runSealedCase(page, 'recovery-authorized');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('RELEASED');
+
+  // The object was never re-created: the policy it requires is the same digest.
+  expect(await sealHex(page, 'auth-policy')).toBe(authPolicyA);
+  // And the state is genuinely different from the sealed one.
+  expect(await sealHex(page, 'current-digest')).not.toBe(await sealHex(page, 'sealed-digest'));
+
+  // The route really went through PolicyAuthorize.
+  const tpmView = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'TPM-model view',
+  });
+  await tpmView.locator('> summary').click();
+  const commands = await page
+    .locator('#panel-sealed [data-seal-policy="session"] .stage-name')
+    .allTextContents();
+  expect(commands.map((c) => c.replace(/^\d+\.\s*/, ''))).toEqual([
+    'TPM2_PolicyPCR',
+    'TPM2_PolicyAuthorize',
+    'TPM2_PolicyOR',
+    'TPM2_PolicyCommandCode',
+  ]);
+});
+
+test('an unapproved recovery is refused, and says the approval is missing', async ({ page }) => {
+  await openSealed(page);
+  await runSealedCase(page, 'recovery-unsigned');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('REFUSED');
+  const rows = page.locator('#panel-sealed .seal-result .check');
+  await expect(rows.filter({ hasText: 'TPM2_VerifySignature' })).toHaveCount(1);
+  await expect(
+    rows.filter({ hasText: 'TPM2_VerifySignature' }).locator('.check-detail').first()
+  ).toContainText('no authority signature');
+  // And the unseal step never ran at all.
+  await expect(
+    rows.filter({ hasText: 'TPM2_Unseal' }).first()
+  ).toHaveAttribute('data-state', 'not-run');
+});
+
+test('tampering with the public metadata fails before anything is decrypted', async ({ page }) => {
+  await openSealed(page);
+  await runSealedCase(page, 'tamper-public');
+  await expect(page.locator('#panel-sealed .seal-result .code-name').first()).toHaveText(
+    'TPM_RC_INTEGRITY'
+  );
+  // Three rows not run, which is the page's own claim that nothing downstream
+  // of TPM2_Load was evaluated.
+  await expect(page.locator('#panel-sealed .seal-result .check[data-state="not-run"]')).toHaveCount(
+    3
+  );
+  await expect(page.locator('#panel-sealed .seal-result .check[data-state="fail"]')).toHaveCount(1);
+});
+
+test('a re-wrapped substitute secret fails on binding, not on integrity', async ({ page }) => {
+  await openSealed(page);
+  await runSealedCase(page, 'rebind-binding');
+  const codes = await page.locator('#panel-sealed .seal-result .code-name').allTextContents();
+  expect(codes.map((c) => c.trim())).toContain('TPM_RC_BINDING');
+  expect(codes.map((c) => c.trim())).not.toContain('TPM_RC_INTEGRITY');
+  // The attacker view names the capability this case assumes, rather than
+  // leaving it implicit.
+  const attacker = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'Attacker view',
+  });
+  await attacker.locator('> summary').click();
+  await expect(attacker).toContainText('seedValue');
+});
+
+test('the post-release case passes every TPM check and still shows the alarm', async ({ page }) => {
+  await openSealed(page);
+  await runSealedCase(page, 'post-unseal');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText(
+    'RELEASED — AND ALREADY EXPOSED'
+  );
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toHaveAttribute(
+    'data-tone',
+    'alarm'
+  );
+  // No TPM response code was returned at all: nothing was refused.
+  await expect(page.locator('#panel-sealed .seal-result .codes')).toHaveCount(0);
+  // Exactly one failing row, and it is the one that is explicitly outside the
+  // TPM — every TPM2_* row passed.
+  const failing = page.locator('#panel-sealed .seal-result .check[data-state="fail"]');
+  await expect(failing).toHaveCount(1);
+  await expect(failing).toContainText('After release');
+  for (const command of ['TPM2_Load', 'TPM2_PolicyPCR', 'TPM2_Unseal']) {
+    await expect(
+      page.locator('#panel-sealed .seal-result .check').filter({ hasText: command }).first()
+    ).toHaveAttribute('data-state', 'pass');
+  }
+  // And the page says the policy was satisfied rather than defeated.
+  await expect(page.locator('#panel-sealed .seal-result .callout[data-tone="alarm"]')).toContainText(
+    'not a policy failure'
+  );
+});
+
+test('the sealed object’s public unique is a digest over the secret, not the secret', async ({
+  page,
+}) => {
+  await openSealed(page);
+  await runSealedCase(page, 'matching');
+  const truth = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'Teaching view',
+  });
+  await truth.locator('> summary').click();
+  const plaintext = await text(page.locator('#panel-sealed [data-seal-truth="plaintext"]'));
+  const obfuscate = await text(page.locator('#panel-sealed [data-seal-truth="obfuscate"]'));
+  expect(obfuscate).toMatch(/^[0-9a-f]{64}$/);
+
+  const map = page.locator('#panel-sealed details.disclosure').filter({
+    hasText: 'public area, field by field',
+  });
+  await map.locator('> summary').click();
+  const unique = await text(page.locator('#panel-sealed .bytemap .byte-field').last().locator('.byte-hex'));
+
+  // Independent re-derivation: H(obfuscate || secret) with OpenSSL.
+  const plaintextHex = Buffer.from(plaintext, 'utf8').toString('hex');
+  expect(sha256Hex(obfuscate + plaintextHex)).toBe(unique);
+  // And it is not a bare digest of the secret, which would be a guessing oracle.
+  expect(sha256Hex(plaintextHex)).not.toBe(unique);
+  expect(unique).not.toContain(plaintextHex);
+});
+
+test('changing the measured value retires the sealed-storage verdict and says so', async ({
+  page,
+}) => {
+  await openSealed(page);
+  await runSealedCase(page, 'matching');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('RELEASED');
+
+  await page.locator('#seal-firmware').fill('OpenFW 4.0.0 / POST / build 20270203');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('NOT RUN');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-note')).toContainText(
+    'measured firmware value was edited'
+  );
+  // Nothing from the previous run survives beside the changed input.
+  await expect(page.locator('#panel-sealed .seal-result .check')).toHaveCount(0);
+  await expect(page.locator('#panel-sealed [data-seal-run="current-digest"]')).toHaveCount(0);
+
+  // Re-running with the edited value produces a refusal computed from it.
+  await page.locator('#panel-sealed').getByRole('button', { name: 'Run this case' }).click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('REFUSED');
+  expect(await sealHex(page, 'current-digest')).not.toBe(await sealHex(page, 'sealed-digest'));
+});
+
+test('selecting a different case retires the verdict before it is re-run', async ({ page }) => {
+  await openSealed(page);
+  await runSealedCase(page, 'matching');
+  await page.locator('#panel-sealed button[data-scenario="tamper-private"]').click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('NOT RUN');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-note')).toContainText(
+    'a different case was selected'
+  );
+  await expect(page.locator('#panel-sealed button[data-scenario="tamper-private"]')).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(page.locator('#panel-sealed button[data-scenario="matching"]')).toHaveAttribute(
+    'aria-pressed',
+    'false'
+  );
+});
+
+test('the sealed-storage act keeps its non-claims visible', async ({ page }) => {
+  await openSealed(page);
+  const panel = page.locator('#panel-sealed');
+  for (const phrase of [
+    'No TPM is executed',
+    'NOT secure boot',
+    'NOT rollback prevention',
+    'NOT anti-hammering',
+    'NOT a production authorization system',
+  ]) {
+    await expect(panel).toContainText(phrase);
+  }
+  // The weaker of the two provenance claims is stated as weaker.
+  const provenance = panel.locator('details.disclosure').filter({
+    hasText: 'What the policy digests are and are not pinned to',
+  });
+  await provenance.locator('> summary').click();
+  await expect(provenance).toContainText('NOT pinned to a published test vector');
+  // And the deprecation is recorded rather than inherited silently.
+  const sources = panel.locator('details.disclosure').filter({
+    hasText: 'Where the specification text comes from',
+  });
+  await sources.locator('> summary').click();
+  await expect(sources).toContainText('DEPRECATED in Version 185');
+});

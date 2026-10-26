@@ -277,7 +277,7 @@ export async function boot(page: Page, theme: 'dark'): Promise<void> {
 
   // ── The page really rendered ────────────────────────────────────────────
   await expect(page.locator('main')).toHaveCount(1);
-  await expect(page.locator('.tab-btn')).toHaveCount(7);
+  await expect(page.locator('.tab-btn')).toHaveCount(8);
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('h1')).toHaveText('Attestation Gate');
 
@@ -301,13 +301,13 @@ export async function boot(page: Page, theme: 'dark'): Promise<void> {
   // ── The arrival state: Measured Boot active and stepped to zero ─────────
   // `renderBootPanel` runs at mount, so first paint includes the four
   // registers at their reset values and the six editable stage rows. The other
-  // six panels are lazily rendered: hidden AND EMPTY until their tab is first
+  // seven panels are lazily rendered: hidden AND EMPTY until their tab is first
   // activated — asserted, because "empty" is this lab's tell that a renderer
   // threw (see `watchPageErrors`).
   await expect(page.locator('#panel-boot .step-progress')).toHaveText('Step 0 / 6');
   await expect(page.locator('#panel-boot .pcr-row')).toHaveCount(4);
   await expect(page.locator('#panel-boot .stages .stage')).toHaveCount(6);
-  for (const id of ['quote', 'magic', 'break', 'time', 'signature', 'daa']) {
+  for (const id of ['quote', 'magic', 'break', 'time', 'signature', 'daa', 'sealed']) {
     await expect(page.locator(`#panel-${id}`)).toBeHidden();
     await expect(page.locator(`#panel-${id}`)).toBeEmpty();
   }
@@ -718,7 +718,7 @@ async function openDisclosure(page: Page, panel: string, index: number): Promise
  *    its only scan.
  *
  *  - EVERY PANEL IS RENDERED LAZILY, so a tab that is never clicked is a panel
- *    that is never even IN the DOM. Each of the seven is activated through its
+ *    that is never even IN the DOM. Each of the eight is activated through its
  *    real tab button and scanned in its own driven states.
  *
  *  - EVERY VERDICT TONE, IN EVERY PANEL THAT PRODUCES ONE. The three tones —
@@ -740,7 +740,7 @@ async function openDisclosure(page: Page, panel: string, index: number): Promise
 export async function driveAllStates(page: Page, theme: string): Promise<void> {
   const scanAt = (s: string): Promise<void> => scan(page, `${theme} / ${s}`);
 
-  await scanAt('arrival: Measured Boot at step 0, six panels unrendered, disclosures shut');
+  await scanAt('arrival: Measured Boot at step 0, seven panels unrendered, disclosures shut');
 
   // ── The shared skip link, focused ───────────────────────────────────────
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
@@ -935,6 +935,82 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
 
   for (let i = 0; i < 4; i++) await openDisclosure(page, '#panel-daa', i);
   await scanAt('DAA: proof outputs, pseudonyms, revocation teaching view, and source limits open');
+
+  // ── 8. Sealed Storage ───────────────────────────────────────────────────
+  // Driven through its real controls, including the state no other panel has:
+  // a RETIRED verdict. The panel must never show a result beside inputs that
+  // did not produce it, so switching case or editing the measured value clears
+  // the region back to NOT RUN — and that cleared state is scanned too.
+  await openTab(page, /Sealed Storage/, '#panel-sealed');
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toContainText('NOT RUN');
+  await expect(page.locator('#panel-sealed .pcr-row')).not.toHaveCount(0);
+  await scanAt('Sealed Storage: arrival — the sealed state, and no verdict yet');
+
+  const sealRun = page.locator('#panel-sealed').getByRole('button', { name: 'Run this case' });
+  await sealRun.click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict[data-tone="ok"]')).toContainText(
+    'RELEASED'
+  );
+  await scanAt('Sealed Storage: matching state — the secret is released');
+
+  await page.locator('#panel-sealed button[data-scenario="firmware-update"]').click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toContainText('NOT RUN');
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toContainText('retired');
+  await scanAt('Sealed Storage: the previous verdict retired by a change of case');
+
+  await sealRun.click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict[data-tone="bad"]')).toContainText(
+    'REFUSED'
+  );
+  await expect(page.locator('#panel-sealed .codes .code-name').first()).toContainText('TPM_RC_VALUE');
+  await scanAt('Sealed Storage: firmware changed — refused on the actual register mismatch');
+
+  await page.locator('#panel-sealed button[data-scenario="tamper-private"]').click();
+  await sealRun.click();
+  await expect(page.locator('#panel-sealed .codes .code-name').first()).toContainText(
+    'TPM_RC_INTEGRITY'
+  );
+  await expect(page.locator('#panel-sealed .check[data-state="not-run"]')).not.toHaveCount(0);
+  await scanAt('Sealed Storage: tampered ciphertext — the only NOT RUN rows in this act');
+
+  await page.locator('#panel-sealed button[data-scenario="recovery-unsigned"]').click();
+  await sealRun.click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict[data-tone="bad"]')).toContainText(
+    'REFUSED'
+  );
+  await scanAt('Sealed Storage: recovery with no approval at all — refused');
+
+  await page.locator('#panel-sealed button[data-scenario="recovery-authorized"]').click();
+  await sealRun.click();
+  await expect(page.locator('#panel-sealed .seal-result .verdict[data-tone="ok"]')).toContainText(
+    'RELEASED'
+  );
+  await scanAt('Sealed Storage: correctly authorized recovery — released through branch B');
+
+  await page.locator('#panel-sealed button[data-scenario="post-unseal"]').click();
+  await sealRun.click();
+  await expect(
+    page.locator('#panel-sealed .seal-result .verdict[data-tone="alarm"]')
+  ).toContainText('RELEASED — AND ALREADY EXPOSED');
+  await scanAt('Sealed Storage: released, then compromised — the alarm tone');
+
+  // The four views, each its own disclosure, plus the structural exhibits.
+  const sealDisclosures = await page.locator('#panel-sealed details.disclosure').count();
+  for (let i = 0; i < sealDisclosures; i++) await openDisclosure(page, '#panel-sealed', i);
+  await scanAt('Sealed Storage: every disclosure open — the byte map, the policy, the four views');
+
+  await page.locator('#seal-firmware').fill('OpenFW 9.9.9 / POST / build 20270101');
+  await expect(page.locator('#panel-sealed .seal-result .verdict')).toContainText('NOT RUN');
+  await scanAt('Sealed Storage: the verdict retired by editing the measured value');
+
+  await page.locator('#panel-sealed .table-wrap').first().focus();
+  await scanAt('Sealed Storage: the response-code table region focused');
+
+  // Back to the DAA panel, because the hover states below are on ITS controls
+  // and a hidden panel's button cannot be hovered. Without this the gate fails
+  // on a locator rather than on an accessibility finding, which is exactly the
+  // "red under the wrong name" shape this file warns about elsewhere.
+  await openTab(page, /Anonymous Membership/, '#panel-daa');
 
   // ── Hover, which persists after a click ─────────────────────────────────
   await page.locator('#panel-daa button[data-daa-state="revoked"]').hover();

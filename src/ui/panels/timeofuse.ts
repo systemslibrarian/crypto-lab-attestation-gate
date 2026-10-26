@@ -180,6 +180,12 @@ export function renderTimeOfUsePanel(root: HTMLElement): void {
             'exactly the same scope limit: it is a statement about the registers, and the ' +
             'registers only know what was measured into them.',
         ]),
+        el('p', {}, [
+          'The Sealed Storage tab builds exactly that, over the same four registers this act ' +
+            'quotes, and ends on the same sentence from the other side: the policy releases the ' +
+            'secret to a machine in an approved state, and what happens to those bytes afterwards ' +
+            'happens outside the TPM.',
+        ]),
       ]),
       disclosure('The sibling exhibit this one answers', [
         el('p', {}, [
