@@ -1,5 +1,5 @@
 /**
- * The page: hero, the plain-language on-ramp, the honest-scoping card, seven
+ * The page: hero, the plain-language on-ramp, the honest-scoping card, eight
  * tabbed acts, the failure-code reference, and the footer.
  *
  * Panels render lazily on first activation and are `hidden` until then, which
@@ -18,6 +18,7 @@ import { renderBreakPanel } from './panels/breakit';
 import { renderTimeOfUsePanel } from './panels/timeofuse';
 import { renderSignaturePanel } from './panels/signature';
 import { renderDaaPanel } from './panels/daa';
+import { renderSealedPanel } from './panels/sealed';
 
 interface Tab {
   id: string;
@@ -33,6 +34,7 @@ const TABS: Tab[] = [
   { id: 'time', label: 'Time of Use', render: renderTimeOfUsePanel },
   { id: 'signature', label: 'Whose Signature', render: renderSignaturePanel },
   { id: 'daa', label: 'Anonymous Membership', render: renderDaaPanel },
+  { id: 'sealed', label: 'Sealed Storage', render: renderSealedPanel },
 ];
 
 export function mount(root: HTMLElement): void {
@@ -82,8 +84,9 @@ function intro(): HTMLElement {
         'real byte layouts, and a verifier you can watch reject things.',
     ]),
     el('p', { class: 'card-lede' }, [
-      'Start at Measured Boot to see how the record accumulates. The last two tabs are the ones ' +
-        'worth staying for.',
+      'Start at Measured Boot to see how the record accumulates. Time of Use is the act the rest ' +
+        'of the exhibit is built to set up, and Sealed Storage reaches the same limit from the ' +
+        'other direction — the TPM enforcing a measured state locally rather than reporting it.',
     ]),
   ]);
 }
@@ -117,6 +120,13 @@ function scoping(): HTMLElement {
             'The no-application-attribute CDL Pi_DAA+ equations over a Type-3 BLS12-381 pairing: ' +
               'Setup, Join proof, BBS+ credential, randomized Sign/Verify, basename Link, and the ' +
               'construction’s private-key rogue-list check.',
+            'The enhanced-authorization arithmetic: TPM2_PolicyPCR, TPM2_PolicyOR, ' +
+              'TPM2_PolicyCommandCode and TPM2_PolicyAuthorize, transcribed from the reference ' +
+              'implementation’s own hashing order, with the two-hash PolicyUpdate pinned to the ' +
+              'published TCG EK Credential Profile authPolicy constant.',
+            'The sealed-object format: a TPM_ALG_KEYEDHASH TPMT_PUBLIC, unique = H(obfuscate || ' +
+              'secret), and a private blob built by KDFa over the parent seed, AES-128-CFB and an ' +
+              'outer HMAC over symIv ‖ encSensitive ‖ Name.',
           ].map((t) => el('li', { role: 'listitem' }, [t]))
         ),
       ]),
@@ -143,6 +153,13 @@ function scoping(): HTMLElement {
             'The DAA platform secret and issuer are software fixtures. BLS12-381 is an algebraic ' +
               'instantiation, not a TPM/ISO ECDAA profile; no TPM command or hardware boundary is ' +
               'present, and the JavaScript arithmetic is not side-channel hardened.',
+            'The sealed-storage act’s storage parent. Its seedValue is a value in this page’s ' +
+              'memory; in hardware it never leaves the chip, and that is what makes an integrity ' +
+              'failure mean anything. One case hands it to an attacker deliberately and shows ' +
+              'the fixedTPM parent shortcut accepting an authenticated replacement blob.',
+            'No command buffer, session HMAC, parameter encryption or transport is built, so the ' +
+              'policy act is not wire interoperable even where its structures are byte-exact. It ' +
+              'models no secure boot, no rollback prevention, no anti-hammering and no authValue.',
           ].map((t) => el('li', { role: 'listitem' }, [t]))
         ),
       ]),

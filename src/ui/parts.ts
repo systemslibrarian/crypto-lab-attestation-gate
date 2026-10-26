@@ -16,7 +16,7 @@
 
 import { toHex } from '../core/bytes';
 import { FAILURE_TABLE, type FailureCode } from '../rats/failures';
-import type { AttestationResult, Check, PcrComparison } from '../rats/verify';
+import type { AttestationResult, CheckState, PcrComparison } from '../rats/verify';
 import type { FieldSpan } from '../tpm/marshal';
 import { el, type Child } from './dom';
 
@@ -53,7 +53,26 @@ export function verdictBlock(
 const CHECK_ICON = { pass: '✓', fail: '✕', 'not-run': '—' } as const;
 const CHECK_WORD = { pass: 'PASS', fail: 'FAIL', 'not-run': 'NOT RUN' } as const;
 
-export function checkList(checks: readonly Check[]): HTMLElement {
+/**
+ * A check row's displayable shape.
+ *
+ * `Check` from `rats/verify` is assignable to this: the widening is in `code`,
+ * which is a RATS `FailureCode` for the appraisal acts and a TPM response code
+ * for the sealed-storage act. Both are strings the row prints verbatim, so one
+ * renderer serves both and there is still only one definition of the markup
+ * and the colour/glyph/word pairing above.
+ */
+export interface DisplayCheck {
+  id: string;
+  name: string;
+  state: CheckState;
+  detail: string;
+  code?: string;
+  computed?: string;
+  presented?: string;
+}
+
+export function checkList(checks: readonly DisplayCheck[]): HTMLElement {
   // `list-style: none` drops the implicit list role in Safari/VoiceOver, so
   // the roles are declared explicitly. The <ul> always has children here —
   // an empty role="list" would fail aria-required-children.
@@ -133,10 +152,14 @@ export function pcrComparison(rows: readonly PcrComparison[]): HTMLElement {
  * because a newcomer does not need it to follow the act and an expert will
  * open it immediately.
  */
-export function byteMap(fields: readonly FieldSpan[], highlight?: (path: string) => boolean): HTMLElement {
+export function byteMap(
+  fields: readonly FieldSpan[],
+  highlight?: (path: string) => boolean,
+  label = 'TPMS_ATTEST fields, in wire order'
+): HTMLElement {
   return el(
     'ul',
-    { class: 'bytemap', role: 'list', 'aria-label': 'TPMS_ATTEST fields, in wire order' },
+    { class: 'bytemap', role: 'list', 'aria-label': label },
     fields.map((f) =>
       el(
         'li',

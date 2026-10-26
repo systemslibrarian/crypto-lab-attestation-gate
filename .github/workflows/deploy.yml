@@ -46,7 +46,12 @@ jobs:
       - name: Unit and known-answer tests (Vitest)
         run: npm test
 
-      - name: Focused DAA mutation gate
+      # Named source mutations across the DAA and sealed-storage modules. Each
+      # one must change the production bundle, be caught by its own named
+      # owning test, and be restored byte for byte — a mutation that fails to
+      # apply is indistinguishable from one nothing caught, so the harness
+      # asserts the diff and the bundle hash moved before believing the kill.
+      - name: Clean-baseline source-mutation gate
         run: npm run mutations
 
       - name: Build (typecheck gates the build)

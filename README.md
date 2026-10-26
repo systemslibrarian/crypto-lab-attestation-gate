@@ -1,6 +1,6 @@
 # Attestation Gate
 
-Browser demo: measured boot into PCRs, a real TPMS_ATTEST quote, and a verifier with reference values — then execute something outside the measured set after the final boot measurement and watch every check pass. It also compares that stable attestation identity with a bounded, executable Direct Anonymous Attestation membership proof. A boot quote proves what was measured, not what is running.
+Browser demo: measured boot into PCRs, a real TPMS_ATTEST quote, and a verifier with reference values — then execute something outside the measured set after the final boot measurement and watch every check pass. It also compares that stable attestation identity with a bounded, executable Direct Anonymous Attestation membership proof, and seals a synthetic secret to a PCR policy the TPM model enforces locally. A boot quote proves what was measured, not what is running — and a sealed secret is released to a machine whose registers match, which is the same limit arriving from the other direction.
 
 **Live demo:** https://systemslibrarian.github.io/crypto-lab-attestation-gate/
 
@@ -22,6 +22,8 @@ analogy to them.
 | Anonymous membership | Camenisch–Drijvers–Lehmann `Pi_DAA+`, full version of IACR ePrint 2016/663 §5.1 | Zero-application-attribute Setup, Join proof, BBS+ credential, randomized Sign/Verify, basename Link, and private-key rogue-list check over BLS12-381 |
 | Hash to curve | RFC 9380 | Separate DAA-specific BLS12-381 G1 domain-separation tags for the public generators and basename map |
 | Credential activation | TPM 2.0 Part 3 §12.6–12.7; TCG EK Credential Profile | Real ECDH on P-256, real `KDFa`/`KDFe`, real AES-128-CFB, real HMAC-SHA-256 |
+| Enhanced authorization | TPM 2.0 Part 3 §5.6, §23.2.3, §23.6, §23.7, §23.11, §23.16 | `TPM2_PolicyPCR`, `TPM2_PolicyOR`, `TPM2_PolicyCommandCode` and `TPM2_PolicyAuthorize`, transcribed from the reference implementation's own hashing order, with `PolicyUpdate` pinned to the published TCG EK Credential Profile `authPolicy` constant |
+| Sealed data objects | TPM 2.0 Part 1 §19.4, §19.5, §24.3.3, §24.5.3.2; Part 2 §12.2.4, §12.3.2.4, §12.3.7; Part 3 §12.1, §12.2, §12.7 (Version 185 numbering); 1.83 Part 4 `PrivateToSensitive`, `UnwrapOuter`, `ObjectLoad`, and `CryptValidateKeys` reference code | A `TPM_ALG_KEYEDHASH` `TPMT_PUBLIC`, `unique := H(obfuscate ‖ secret)`, and a private blob built by `KDFa`/AES-128-CFB/outer HMAC over `symIv ‖ encSensitive ‖ Name`; the load model preserves the fixedTPM-parent validation shortcut |
 | Attestation architecture | **RFC 9334** — RATS Architecture (Informational, January 2023) | Attester → Evidence → Verifier → Attestation Result → Relying Party, with Endorsements and Reference Values as separate inputs |
 | Evidence format | **RFC 9711** — Entity Attestation Token (Standards Track, April 2025) | A real claims-set, integer-keyed in CBOR and name-keyed in JSON |
 | Measurement encoding | **RFC 10013** — EAT Measured Component (Standards Track, July 2026) | The `measured-component` data item, both serializations |
@@ -61,7 +63,11 @@ claim UC security.
 **Not production cryptography.** This is a teaching demo. It runs entirely in your browser, with no
 backend, no network calls and nothing persisted. There is no TPM anywhere near it — a TPM is
 hardware, and this page models one in software, so every protection that comes from a key
-physically never leaving a chip is described here rather than enforced.
+physically never leaving a chip is described here rather than enforced. That applies most sharply
+to the sealed-storage act: the storage parent's `seedValue` is a value in the page's own memory,
+and in hardware it never leaves the chip. No command buffer, session HMAC, parameter encryption or
+transport is built, so nothing here is wire interoperable even where the structures are byte-exact,
+and no `TPM2_*` command is executed or transmitted anywhere.
 The BLS12-381 choice is a Type-3 algebraic teaching instantiation, not the paper's benchmark curve,
 not a TPM 2.0 or ISO ECDAA wire profile, and not interoperable with hardware commands. Fixture
 values are reproducible: proof nonces are secret-keyed with HMAC-SHA-256 and bind the complete
@@ -100,6 +106,17 @@ enforced against someone inspecting the browser bundle.
    randomized Sign/Verify and basename Link; then change the credential, issuer epoch, re-Join
    state, and private-key rogue list and recompute acceptance. The existing PCR/runtime limitation
    remains visible: anonymous provenance is not runtime integrity.
+8. **Sealed Storage** — seal a synthetic secret to PCRs 0, 4, 8 and 9 under a policy that is an
+   OR of the sealed state and an explicitly authorized recovery route. Unseal in the matching
+   state; change the firmware and watch `TPM2_PolicyPCR` refuse from the actual composite digest;
+   assert the wrong PCR selection; tamper with the public metadata or the ciphertext and watch
+   `TPM2_Load` refuse before it decrypts anything; attempt recovery with the wrong authority, the
+   wrong purpose, the wrong state and no signature at all; extract the modelled fixedTPM storage
+   parent's seed and watch an authenticated replacement blob load (the original secret remains
+   hidden); then recover correctly and watch the same `authPolicy` accept a state it was never
+   sealed to. The last case releases the secret and
+   then compromises the machine, which is a statement about what was already handed over rather
+   than about the policy.
 
 ## When to Use It
 
@@ -171,6 +188,37 @@ as TPM-resident. Same end state, different mechanism.
 **A replayed quote is a genuine quote.** Signatures do not expire. Freshness comes from the relying
 party's nonce inside the signed bytes, and from nowhere else.
 
+**A sealed secret is released, and then it is somewhere else.** Sealing enforces a condition at
+the moment of release and has no further say. Exhibit 8's last case passes every TPM check,
+returns `TPM_RC_SUCCESS`, and is then read out of the platform's memory by something running in
+the state the policy approved. The policy was satisfied, not defeated; what is exposed is the
+material already released, and the sealed object on disk is unchanged and still requires the
+policy.
+
+**A PCR policy is brittle, and the cure has a cost the specification states.** TPM 2.0 Part 1
+§16.7.11 names the problem — a firmware update changes the PCRs and the sealed value becomes
+unrecoverable — and gives `TPM2_PolicyAuthorize` as the answer. That command resets `policyDigest`
+and replaces it with a digest over the AUTHORITY'S NAME and a purpose string, so the recovery
+branch says "a state this authority approved" rather than "this state". The authority's signature
+is then the entire security of that branch. Exhibit 8 shows both halves: four cases fail the
+recovery route (wrong key, wrong purpose, wrong state, no signature) and one succeeds.
+The bounded browser model retains only the owner hierarchy proof and therefore rejects tickets
+that name any other hierarchy; a real TPM selects the proof named by the ticket inside the TPM.
+
+**A policy over PCRs is not secure boot, rollback prevention, or anti-hammering.** Nothing in a
+PCR policy verifies a signature on firmware; nothing stops an old sealed blob being paired with an
+old measured state unless a second assertion such as `TPM2_PolicyNV` says so; and a `noDA` object
+has no lockout at all. Exhibit 8 states all three as non-claims rather than leaving them to be
+inferred.
+
+**`fixedTPM` is a confinement premise, not an extra MAC.** The TPM reference `ObjectLoad` path
+skips `CryptValidateKeys` for a child under a `fixedTPM` parent because it assumes that this TPM
+created the blob or validated it during import. If the storage parent's protection seed is
+extracted, an attacker can make the outer HMAC for a substitute sensitive area; the fixed-parent
+load accepts it. Exhibit 8 executes that consequence and distinguishes it from the non-fixed-parent
+path, where the same public/sensitive mismatch returns `TPM_RC_BINDING`. The original sealed value
+is not disclosed by this substitution, but the integrity of what a valid policy releases is lost.
+
 **DAA revocation is not one generic feature.** This lesson implements CDL's private-key rogue-list
 check only. It can revoke a platform after its `gsk` is known; an unrelated listed secret must not
 reject it. Publishing `gsk` also lets verifiers calculate that revoked platform's pseudonym for
@@ -215,7 +263,7 @@ npm test             # the unit and known-answer suites
 npm run build        # typecheck, then a production build
 npm run test:a11y    # the axe WCAG 2.1 A/AA gate against the built site
 npm run test:e2e     # the claims suite
-npm run mutations    # focused DAA source mutations; baseline must pass first
+npm run mutations    # named DAA and sealed-storage source mutations; baseline must pass first
 ```
 
 Playwright needs a browser once: `npx playwright install chromium`.
@@ -255,7 +303,10 @@ checked protocol equations.
 | `src/rats/verify.test.ts` | Every failure path, the two negative-claim fixtures, and the failure-code table |
 | `src/daa/protocol.test.ts` | CDL equations, Join/credential/signature negatives, canonical points/scalars, basename Link, rogue-list semantics, issuer rotation, deterministic vectors, and proof-randomness/credential-interpolation extraction regressions |
 | `src/daa/attestation.test.ts` | Empty anonymous `qualifiedSigner`, byte-level statement vector, PCR/nonce binding, and credential/issuer/revocation lesson outcomes |
-| `e2e/claims.spec.ts` | Does the page tell the truth — every printed extension re-derived with OpenSSL's SHA-256, the byte map tiled against the blob it describes, each failure path naming its actual cause, DAA statement hash and pairing recomputed independently, verdict retirement, and the NEG-1 / THREAT-1 fixtures |
+| `src/tpm/policy.test.ts` | The published TCG EK Credential Profile `authPolicy` re-derived from scratch through `policyUpdate`; Part 2's own worked response-code composition (`0x080 + 0x004 + 0x140 = 0x1c4`); both published `pcrSelect` bitmap examples inside a full `TPML_PCR_SELECTION`; every policy equation recomputed by a second implementation using `@noble/hashes`; every refusal path of `TPM2_PolicyPCR`, `TPM2_PolicyOR`, `TPM2_PolicyCommandCode`, `TPM2_PolicyAuthorize` and the Part 3 §5.6 authorization checks |
+| `src/tpm/seal.test.ts` | The sealed `TPMT_PUBLIC` tiled field by field and its Name re-derived; `unique := H(obfuscate ‖ secret)` and the bare-digest version it is not; `KDFa` STORAGE/INTEGRITY re-derived independently; the sensitive area recovered with `@noble/ciphers` rather than this module's wrapping; fixedTPM-parent validation skipping compared with the non-fixed-parent `TPM_RC_BINDING` path; unsupported `nameAlg` returned as `TPM_RC_HASH` rather than an exception; and the remaining response-code paths reached by their own causes |
+| `src/acts/sealing.test.ts` | All fifteen named scenarios run to a verdict; the eight required controls asserted as outcomes; the policy proven to bind the selection, the expected digest, the authority and the purpose; branch B proven independent of the state; and every response code the scenarios emit proven to have a row in the act's own reference table |
+| `e2e/claims.spec.ts` | Does the page tell the truth — every printed extension re-derived with OpenSSL's SHA-256, the byte map tiled against the blob it describes, each failure path naming its actual cause, DAA statement hash and pairing recomputed independently, verdict retirement, the NEG-1 / THREAT-1 fixtures, and every policy-digest hash stage on the sealed-storage page re-derived with OpenSSL including both halves of the two-hash `PolicyUpdate` |
 | `e2e/a11y.spec.ts` | Zero axe WCAG 2.1 A/AA violations across every driven state, at desktop and 380px, with arithmetic contrast and non-text contrast oracles axe does not have |
 
 The GitHub Pages deploy runs all of it and is blocked if any of it fails.

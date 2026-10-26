@@ -7,6 +7,12 @@ const PROTOCOL = 'src/daa/protocol.ts';
 const ATTESTATION = 'src/daa/attestation.ts';
 const PROTOCOL_TEST = 'src/daa/protocol.test.ts';
 const ATTESTATION_TEST = 'src/daa/attestation.test.ts';
+const POLICY = 'src/tpm/policy.ts';
+const POLICY_TEST = 'src/tpm/policy.test.ts';
+const SEAL = 'src/tpm/seal.ts';
+const SEAL_TEST = 'src/tpm/seal.test.ts';
+const SEALING = 'src/acts/sealing.ts';
+const SEALING_TEST = 'src/acts/sealing.test.ts';
 
 const mutations = [
   {
@@ -143,6 +149,182 @@ const mutations = [
     spec: ATTESTATION_TEST,
     test: 'the complete TPMS_ATTEST is marshalled with an empty qualifiedSigner',
   },
+
+  // ── Sealed storage: the policy arithmetic ────────────────────────────────
+  {
+    name: 'PolicyPCR omits the marshalled PCR selection',
+    file: POLICY,
+    anchor: '    [u32be(TPM_CC.PolicyPCR), pcrs, bound],',
+    // `pcrs.slice(0, 0)` rather than dropping the argument: `noUnusedLocals`
+    // would reject an unused binding, and a mutation that fails to COMPILE is
+    // not a mutation the suite caught.
+    replacement: '    [u32be(TPM_CC.PolicyPCR), pcrs.slice(0, 0), bound],',
+    spec: POLICY_TEST,
+    test: 'extends policyDigest_old || TPM_CC_PolicyPCR || pcrs || digestTPM',
+  },
+  {
+    name: 'PolicyPCR accepts a mismatched expected digest',
+    file: POLICY,
+    anchor: '    if (input.pcrDigest.length !== 0 && !bytesEqual(input.pcrDigest, input.digestTPM)) {',
+    replacement: '    if (false && input.pcrDigest.length !== 0) {',
+    spec: POLICY_TEST,
+    test: 'returns TPM_RC_VALUE and changes nothing when the expected digest is wrong',
+  },
+  {
+    name: 'PolicyPCR ignores a moved pcrUpdateCounter',
+    file: POLICY,
+    anchor:
+      '    if (session.pcrUpdateCounter !== undefined && session.pcrUpdateCounter !== input.pcrUpdateCounter) {',
+    replacement: '    if (false && session.pcrUpdateCounter !== undefined) {',
+    spec: POLICY_TEST,
+    test: 'pins pcrUpdateCounter on first use and refuses when it has moved',
+  },
+  {
+    name: 'PolicyOR does not reset to a Zero Digest',
+    file: POLICY,
+    anchor: '  session.policyDigest = ZERO_DIGEST.slice();',
+    replacement: '  session.policyDigest = session.policyDigest.slice();',
+    spec: POLICY_TEST,
+    test: 'resets to a Zero Digest and extends over the whole list',
+  },
+  {
+    name: 'PolicyOR accepts a session that matches no branch',
+    file: POLICY,
+    anchor: '  if (!session.trial && !matched) {',
+    replacement: '  if (false && !matched) {',
+    spec: POLICY_TEST,
+    test: 'returns TPM_RC_VALUE when the session matches no branch',
+  },
+  {
+    name: 'PolicyAuthorize ignores which state the authority approved',
+    file: POLICY,
+    anchor: '    if (!bytesEqual(session.policyDigest, input.approvedPolicy)) {',
+    replacement: '    if (false) {',
+    spec: POLICY_TEST,
+    test: 'refuses when the approval is for a state this session did not reach',
+  },
+  {
+    name: 'PolicyAuthorize accepts an unverified ticket',
+    file: POLICY,
+    anchor:
+      '    if (input.checkTicket.tag !== TPM_ST_VERIFIED || !bytesEqual(input.checkTicket.digest, expected)) {',
+    // Keeps `expected` referenced, so the mutation compiles and the kill is a
+    // kill rather than a type error.
+    replacement:
+      '    if (input.checkTicket.tag !== TPM_ST_VERIFIED || !bytesEqual(expected, expected)) {',
+    spec: POLICY_TEST,
+    test: 'refuses a ticket minted for a different authority',
+  },
+  {
+    name: 'PolicyAuthorize ignores the verification-ticket hierarchy',
+    file: POLICY,
+    anchor: '    if (input.checkTicket.hierarchy !== TPM_RH.OWNER) {',
+    replacement: '    if (false && input.checkTicket.hierarchy !== TPM_RH.OWNER) {',
+    spec: POLICY_TEST,
+    test: 'refuses an owner-proof digest relabelled as a NULL-hierarchy ticket',
+  },
+  {
+    name: 'PolicyUpdate collapsed into a single hash',
+    file: POLICY,
+    anchor: '  const first = sha256(concatBytes(before, u32be(commandCode), arg2));\n  return { first, second: sha256(concatBytes(first, arg3)) };',
+    replacement:
+      '  const first = sha256(concatBytes(before, u32be(commandCode), arg2));\n  return { first, second: sha256(concatBytes(before, u32be(commandCode), arg2, arg3)) };',
+    spec: POLICY_TEST,
+    test: 're-derives the TCG EK Credential Profile authPolicy through policyUpdate',
+  },
+  {
+    name: 'the use-time check stops comparing policyDigest with authPolicy',
+    file: POLICY,
+    anchor: '  if (!bytesEqual(session.policyDigest, entity.authPolicy)) {',
+    replacement: '  if (false) {',
+    spec: POLICY_TEST,
+    test: 'refuses a digest that differs from the authPolicy',
+  },
+
+  // ── Sealed storage: the object format ────────────────────────────────────
+  {
+    name: 'the sealed object gains userWithAuth',
+    file: SEAL,
+    anchor:
+      "export const SEALED_ATTRIBUTES: readonly AttributeName[] = ['fixedTPM', 'fixedParent', 'noDA'];",
+    replacement:
+      "export const SEALED_ATTRIBUTES: readonly AttributeName[] = [\n  'fixedTPM',\n  'fixedParent',\n  'noDA',\n  'userWithAuth',\n];",
+    spec: SEAL_TEST,
+    test: 'has userWithAuth CLEAR, which is what forces a policy session',
+  },
+  {
+    name: 'the private blob’s HMAC stops covering the object Name',
+    file: SEAL,
+    anchor: '  return hmacSha256(integrityKey(parent), concatBytes(marshalIv(iv), encSensitive, name));',
+    // `name.slice(0, 0)` keeps the parameter referenced so the mutation
+    // compiles under `noUnusedParameters`; the Name contributes nothing.
+    replacement:
+      '  return hmacSha256(integrityKey(parent), concatBytes(marshalIv(iv), encSensitive, name.slice(0, 0)));',
+    spec: SEAL_TEST,
+    test: 'HMACs the marshalled IV, the ciphertext and the Name with no size field',
+  },
+  {
+    name: 'unique stops including the obfuscation value',
+    file: SEAL,
+    anchor: '  return sha256(concatBytes(obfuscate, secret));',
+    // Keeps the parameter referenced so the mutation compiles; the
+    // obfuscation value contributes no bytes.
+    replacement: '  return sha256(concatBytes(obfuscate.slice(0, 0), secret));',
+    spec: SEAL_TEST,
+    test: 'carries unique = H(obfuscate || secret), not H(secret)',
+  },
+  {
+    name: 'non-fixedTPM Load stops checking that the two halves are one object',
+    file: SEAL,
+    anchor: '    if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), pub.unique)) {',
+    // Compares the sensitive area against ITSELF rather than against the
+    // public area's `unique`: always false while retaining the branch shape.
+    replacement:
+      '    if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), keyedHashUnique(sensitive.seedValue, sensitive.data))) {',
+    spec: SEAL_TEST,
+    test: 'revalidates the binding and returns TPM_RC_BINDING for a non-fixedTPM parent',
+  },
+  {
+    name: 'fixedTPM Load incorrectly revalidates a TPM-authenticated child blob',
+    file: SEAL,
+    anchor: '  if (!parent.fixedTPM) {',
+    replacement: '  if (parent.fixedTPM) {',
+    spec: SEAL_TEST,
+    test: 'accepts a re-wrapped substitute under a fixedTPM parent once its seed is compromised',
+  },
+  {
+    name: 'TPM2_Load sends an unsupported nameAlg into computeName',
+    file: SEAL,
+    anchor: '  if (pub.nameAlg !== TPM_ALG.SHA256) {',
+    replacement:
+      '  if (pub.nameAlg !== TPM_ALG.SHA256 && publicArea.length < 0) {',
+    spec: SEAL_TEST,
+    test: 'returns TPM_RC_HASH on inPublic instead of throwing for an unsupported nameAlg',
+  },
+  {
+    name: 'TPM2_Load accepts bytes after the declared TPM2B_SENSITIVE',
+    file: SEAL,
+    anchor: '  if (bytes.length !== 2 + outer) return null;',
+    replacement: '  if (bytes.length < 2 + outer) return null;',
+    spec: SEAL_TEST,
+    test: 'refuses authenticated trailing bytes after the declared TPM2B_SENSITIVE',
+  },
+  {
+    name: 'TPM2_Load sends a wrong-size symIv into AES-CFB',
+    file: SEAL,
+    anchor: '  if (iv.length !== AES_BLOCK) {',
+    replacement: '  if (false && iv.length !== AES_BLOCK) {',
+    spec: SEAL_TEST,
+    test: 'refuses an authenticated wrong-size symIv without throwing',
+  },
+  {
+    name: 'the post-release exposure is suppressed',
+    file: SEALING,
+    anchor: '  const exposed = unseal.ok && (config.postUnsealCompromise ?? false);',
+    replacement: '  const exposed = false;',
+    spec: SEALING_TEST,
+    test: 'shows a post-release compromise reaching only what was already released',
+  },
 ];
 
 function run(command, args, timeout = 300_000) {
@@ -197,8 +379,11 @@ const selected = requested ? mutations.filter((mutation) => mutation.name === re
 if (selected.length === 0) throw new Error(`unknown mutation: ${requested}`);
 
 build();
-const baseline = run('npx', ['vitest', 'run', 'src/daa'], 180_000);
-requirePass(baseline, 'unmutated DAA baseline');
+// The WHOLE unit suite, not just the directories these mutations touch. A
+// baseline scoped to the mutated files would stay green while a mutation broke
+// something elsewhere, and the restore control at the end would agree with it.
+const baseline = run('npx', ['vitest', 'run'], 300_000);
+requirePass(baseline, 'unmutated unit baseline');
 console.log('baseline: unmutated copy PASSES');
 
 for (const [index, mutation] of selected.entries()) {
@@ -243,6 +428,6 @@ for (const [index, mutation] of selected.entries()) {
   if (!caught) throw new Error(`${mutation.name}: mutation was not caught`);
 }
 
-const finalBaseline = run('npx', ['vitest', 'run', 'src/daa'], 180_000);
-requirePass(finalBaseline, 'restored DAA baseline');
+const finalBaseline = run('npx', ['vitest', 'run'], 300_000);
+requirePass(finalBaseline, 'restored unit baseline');
 console.log(`all ${selected.length} mutation(s) caught`);
