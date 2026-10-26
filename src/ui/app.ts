@@ -155,7 +155,8 @@ function scoping(): HTMLElement {
               'present, and the JavaScript arithmetic is not side-channel hardened.',
             'The sealed-storage act’s storage parent. Its seedValue is a value in this page’s ' +
               'memory; in hardware it never leaves the chip, and that is what makes an integrity ' +
-              'failure mean anything. One case hands it to an attacker deliberately.',
+              'failure mean anything. One case hands it to an attacker deliberately and shows ' +
+              'the fixedTPM parent shortcut accepting an authenticated replacement blob.',
             'No command buffer, session HMAC, parameter encryption or transport is built, so the ' +
               'policy act is not wire interoperable even where its structures are byte-exact. It ' +
               'models no secure boot, no rollback prevention, no anti-hammering and no authValue.',

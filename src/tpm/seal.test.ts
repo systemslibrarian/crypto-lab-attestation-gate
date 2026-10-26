@@ -60,6 +60,7 @@ function refKdfa(key: Uint8Array, label: string, contextU: Uint8Array, contextV:
 const PARENT: StorageParent = {
   label: 'test SRK',
   nameAlg: TPM_ALG.SHA256,
+  fixedTPM: true,
   seedValue: nobleSha256(utf8('a storage parent seed')),
 };
 const OBFUSCATE = nobleSha256(utf8('an obfuscation value'));
@@ -306,9 +307,10 @@ describe('TPM2_Load', () => {
     if (!loaded.ok) expect(loaded.rcName).toBe('TPM_RC_INTEGRITY');
   });
 
-  it('refuses a re-wrapped substitute secret with TPM_RC_BINDING, not TPM_RC_INTEGRITY', () => {
-    // Only possible for a holder of the parent seed. The HMAC is correct and
-    // the object still fails, on `unique`.
+  it('accepts a re-wrapped substitute under a fixedTPM parent once its seed is compromised', () => {
+    // Part 4 ObjectLoad skips CryptValidateKeys for a fixedTPM parent: it
+    // assumes only this TPM could have created or import-validated a blob with
+    // a valid outer HMAC. A holder of the parent seed breaks that premise.
     const substitute = marshalSensitive({
       sensitiveType: TPM_ALG.KEYEDHASH,
       authValue: new Uint8Array(0),
@@ -324,8 +326,48 @@ describe('TPM2_Load', () => {
       enc
     );
     const loaded = tpm2Load(PARENT, object.publicArea, priv);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(new TextDecoder().decode(loaded.object.sensitive.data)).toBe('an attacker-chosen value');
+      expect(
+        toHex(keyedHashUnique(loaded.object.sensitive.seedValue, loaded.object.sensitive.data))
+      ).not.toBe(toHex(loaded.object.pub.unique));
+    }
+  });
+
+  it('revalidates the binding and returns TPM_RC_BINDING for a non-fixedTPM parent', () => {
+    const substitute = marshalSensitive({
+      sensitiveType: TPM_ALG.KEYEDHASH,
+      authValue: new Uint8Array(0),
+      seedValue: OBFUSCATE,
+      data: utf8('an attacker-chosen value'),
+    });
+    const enc = nobleCfb(storageKey(PARENT, object.name), IV).encrypt(substitute);
+    const priv = concatBytes(
+      u16be(SHA256_LEN),
+      outerHmac(PARENT, IV, enc, object.name),
+      u16be(IV.length),
+      IV,
+      enc
+    );
+    const loaded = tpm2Load({ ...PARENT, fixedTPM: false }, object.publicArea, priv);
     expect(loaded.ok).toBe(false);
-    if (!loaded.ok) expect(loaded.rcName).toBe('TPM_RC_BINDING');
+    if (!loaded.ok) {
+      expect(loaded.rc).toBe(TPM_RC.BINDING);
+      expect(loaded.rcName).toBe('TPM_RC_BINDING');
+    }
+  });
+
+  it('returns TPM_RC_HASH on inPublic instead of throwing for an unsupported nameAlg', () => {
+    const unknownNameAlg = object.publicArea.slice();
+    unknownNameAlg[2] = 0x77;
+    unknownNameAlg[3] = 0x77;
+    const loaded = tpm2Load(PARENT, unknownNameAlg, object.priv);
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.rc).toBe(rcParameter(TPM_RC.HASH, 2));
+      expect(loaded.reason).toContain('implements SHA-256 only');
+    }
   });
 
   it('refuses authenticated trailing bytes after the declared TPM2B_SENSITIVE', () => {
@@ -401,9 +443,9 @@ describe('TPM2_Load', () => {
   });
 
   it('refuses a sensitive area that declares a different type from the public one', () => {
-    // Reachable only by someone holding the parent seed, which is the same
-    // assumption as the binding case: the blob's HMAC is valid and the two
-    // halves still disagree.
+    // CryptValidateKeys performs this compatibility check only on the
+    // non-fixedTPM-parent path. The blob's HMAC is valid and its two halves
+    // still disagree.
     const wrongType = marshalSensitive({
       sensitiveType: TPM_ALG.ECC,
       authValue: new Uint8Array(0),
@@ -418,7 +460,7 @@ describe('TPM2_Load', () => {
       IV,
       enc
     );
-    const loaded = tpm2Load(PARENT, object.publicArea, priv);
+    const loaded = tpm2Load({ ...PARENT, fixedTPM: false }, object.publicArea, priv);
     expect(loaded.ok).toBe(false);
     if (!loaded.ok) expect(loaded.rcName).toBe('TPM_RC_TYPE');
   });

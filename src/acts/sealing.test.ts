@@ -113,13 +113,14 @@ describe('the sealed-storage controls', () => {
     expect(r.checks.find((c) => c.id === 'load')?.detail).toContain('before anything is');
   });
 
-  it('refuses a substituted secret on the binding check, with a valid outer HMAC', () => {
-    const r = run('rebind-binding');
-    expect(r.verdict).toBe('REFUSED');
-    // TPM_RC_BINDING, not TPM_RC_INTEGRITY: the HMAC verified and the two
-    // halves of the object still do not belong together.
-    expect(r.codes[0].name).toBe('TPM_RC_BINDING');
-    expect(r.checks.find((c) => c.id === 'load')?.detail).toContain('unique');
+  it('accepts an attacker-chosen substitute after the fixedTPM parent seed is extracted', () => {
+    const r = run('rebind-fixed-parent');
+    expect(r.verdict).toBe('RELEASED');
+    expect(r.released).toBe('attacker-chosen-value');
+    expect(r.released).not.toBe(SEALED_SECRET);
+    expect(r.codes).toEqual([]);
+    expect(r.checks.find((c) => c.id === 'load')?.detail).toContain('does not recompute unique');
+    expect(r.views.ground.headline).toContain('original secret stayed hidden');
   });
 
   it('refuses recovery signed by a key the policy does not name', () => {
@@ -311,11 +312,12 @@ describe('the scenario set', () => {
     }
   });
 
-  it('releases in exactly three scenarios and refuses in the rest', () => {
+  it('releases data in exactly four scenarios and refuses in the rest', () => {
     const released = SCENARIOS.filter((s) => runSealing(s.config).released !== undefined);
     expect(released.map((s) => s.id).sort()).toEqual([
       'matching',
       'post-unseal',
+      'rebind-fixed-parent',
       'recovery-authorized',
     ]);
   });

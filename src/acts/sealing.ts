@@ -130,6 +130,7 @@ function labelledBytes(label: string, length: number): Uint8Array {
 export const SEAL_PARENT: StorageParent = {
   label: 'SRK (storage root key, owner hierarchy)',
   nameAlg: TPM_ALG.SHA256,
+  fixedTPM: true,
   seedValue: labelledBytes('crypto-lab-attestation-gate/seal/srk-seed', SHA256_LEN),
 };
 
@@ -468,9 +469,10 @@ function flipBit(bytes: Uint8Array, index: number): Uint8Array {
  *
  * This is only possible for an attacker who holds `seedValue`, which in
  * hardware never leaves the TPM. It produces a blob whose outer HMAC is
- * perfectly valid and whose `unique` no longer matches, which is the
- * `TPM_RC_BINDING` case of Part 3 §12.2 EXAMPLE 1 — and the demonstration that
- * integrity and binding are two separate protections rather than one.
+ * perfectly valid and whose `unique` no longer matches. Because the SRK has
+ * `fixedTPM` SET, Part 4 `ObjectLoad` trusts the premise that this TPM created
+ * or import-validated the blob and skips `CryptValidateKeys`; extracting the
+ * parent seed invalidates that premise and makes substitution possible.
  */
 function rebindSecret(object: SealedObject, substitute: string): Uint8Array {
   const sensitive = marshalSensitive({
@@ -532,11 +534,16 @@ export function runSealing(config: SealingConfig = {}): SealingRun {
   const load = tpm2Load(SEAL_PARENT, publicArea, priv);
   checks.push({
     id: 'load',
-    name: 'TPM2_Load — the sealed object is intact and its two halves belong together',
+    name: 'TPM2_Load — the private blob passes the checks applicable to its parent',
     state: load.ok ? 'pass' : 'fail',
     detail: load.ok
-      ? 'the outer HMAC over symIv || encSensitive || Name verifies, and the public area’s ' +
-        'unique equals H(obfuscate || secret) over the decrypted sensitive area'
+      ? tamper === 'rebind'
+        ? 'the outer HMAC verifies. Because the parent has fixedTPM SET, Part 4 ObjectLoad ' +
+          'trusts the blob was created or import-validated by this TPM and does not recompute ' +
+          'unique. Extracting the parent seed broke that premise, so the substitute loaded.'
+        : 'the outer HMAC over symIv || encSensitive || Name verifies. Because the parent has ' +
+          'fixedTPM SET, Part 4 ObjectLoad relies on creation or import having validated the ' +
+          'public/sensitive binding.'
       : load.reason,
     code: load.ok ? undefined : `${load.rcName} · ${load.rcNote}`,
   });
@@ -550,7 +557,7 @@ export function runSealing(config: SealingConfig = {}): SealingRun {
             ? 'TPM2_PolicyPCR — the registers match the sealed state'
             : id === 'authorize'
               ? 'TPM2_PolicyOR / TPM2_PolicyCommandCode — the session reaches the object’s authPolicy'
-              : 'TPM2_Unseal — the secret is released',
+              : 'TPM2_Unseal — the loaded object’s data is released',
         state: 'not-run',
         detail: 'the object never loaded, so no session was evaluated against it',
       });
@@ -614,7 +621,7 @@ export function runSealing(config: SealingConfig = {}): SealingRun {
       },
       {
         id: 'unseal',
-        name: 'TPM2_Unseal — the secret is released',
+        name: 'TPM2_Unseal — the loaded object’s data is released',
         state: 'not-run',
         detail: 'the session never reached the object’s authPolicy',
       }
@@ -704,7 +711,7 @@ export function runSealing(config: SealingConfig = {}): SealingRun {
       codes.push(rcEntry(authorized.rc, authorized.rcName));
       checks.push({
         id: 'unseal',
-        name: 'TPM2_Unseal — the secret is released',
+        name: 'TPM2_Unseal — the loaded object’s data is released',
         state: 'not-run',
         detail: 'the recovery branch was not satisfied, so the session never reached authPolicy',
       });
@@ -771,7 +778,7 @@ export function runSealing(config: SealingConfig = {}): SealingRun {
   });
   checks.push({
     id: 'unseal',
-    name: 'TPM2_Unseal — the secret is released',
+    name: 'TPM2_Unseal — the loaded object’s data is released',
     state: unseal.ok ? 'pass' : 'fail',
     detail: unseal.ok
       ? 'Part 3 §5.6 compared policySession→policyDigest with the object’s authPolicy and they ' +
@@ -788,7 +795,10 @@ export function runSealing(config: SealingConfig = {}): SealingRun {
       id: 'post-release',
       name: 'After release — what a runtime compromise can reach',
       state: exposed ? 'fail' : 'pass',
-      detail: exposed
+      detail: config.tamper === 'rebind'
+        ? 'the caller received the attacker-chosen replacement, not the original secret. The ' +
+          'failure was loss of the fixedTPM parent’s seed-confinement premise, before policy use.'
+        : exposed
         ? 'the plaintext is in the platform’s own memory, where the TPM has no further say. ' +
           'The policy was satisfied, not defeated — and it has nothing left to protect.'
         : 'nothing has read the released plaintext. The sealed blob on disk is unchanged and ' +
@@ -856,6 +866,9 @@ function assemble(input: {
         learns: [
           released === undefined
             ? 'nothing about the secret: a refused TPM2_Unseal returns a response code and no data'
+            : input.config.tamper === 'rebind'
+              ? 'the platform received the attacker-chosen substitute; the original sealed ' +
+                'secret was not recovered or revealed'
             : input.exposed
               ? 'the plaintext — but only because the platform had already been given it'
               : 'nothing yet; the plaintext exists only inside the platform that asked for it',
@@ -878,7 +891,10 @@ function assemble(input: {
           ? 'that is byte-identical to the state the secret was sealed to'
           : `the sealed state hashed to ${toHex(input.sealed.digestTPM)} — this machine is in a different state`,
         input.loaded
-          ? 'TPM2_Load accepted the object, so the blob is intact'
+          ? input.config.tamper === 'rebind'
+            ? 'TPM2_Load accepted the forged blob because its fixedTPM-parent assumption no ' +
+              'longer held after the parent seed was extracted'
+            : 'TPM2_Load accepted the object under the fixedTPM-parent trust boundary'
           : 'TPM2_Load refused the object, so nothing could be attempted',
         released === undefined
           ? 'the platform holds a response code and no plaintext'
@@ -896,6 +912,8 @@ function assemble(input: {
         headline:
           released === undefined
             ? 'The sealed secret was never released.'
+            : input.config.tamper === 'rebind'
+              ? 'The original secret stayed hidden, but an attacker-chosen replacement was released.'
             : input.exposed
               ? 'The secret was released to an authorized state, and then read by something ' +
                 'running in that state.'
@@ -904,6 +922,11 @@ function assemble(input: {
           released === undefined
             ? 'The plaintext is still only inside the encrypted sensitive area. No part of it ' +
               'reached the caller.'
+            : input.config.tamper === 'rebind'
+              ? 'The storage parent had fixedTPM SET, so ObjectLoad trusted that an authenticated ' +
+                'child blob came from this TPM and skipped the unique binding recomputation. That ' +
+                'premise fails once the parent seed is extracted: the attacker can authenticate a ' +
+                'replacement sensitive area, and a valid policy then unseals those replacement bytes.'
             : input.exposed
               ? 'This is not a policy failure. The policy did exactly what it says: it released ' +
                 'the bytes to a machine in an approved state. Everything that happens to those ' +
@@ -988,11 +1011,12 @@ export const SCENARIOS: Scenario[] = [
     config: { tamper: 'private' },
   },
   {
-    id: 'rebind-binding',
-    label: 'A substituted secret, re-wrapped with the parent seed',
+    id: 'rebind-fixed-parent',
+    label: 'Parent seed extracted — a substituted secret is accepted',
     intent:
       'An attacker holding the storage parent’s seed can produce a blob with a valid outer HMAC. ' +
-      'It still fails, on the separate binding check between unique and the sensitive area.',
+      'Because that parent has fixedTPM SET, ObjectLoad trusts the TPM-created-blob premise and ' +
+      'skips the binding recheck; the original secret remains hidden, but the substitute loads.',
     config: { tamper: 'rebind' },
   },
   {
@@ -1185,9 +1209,12 @@ export const SEAL_RESPONSE_CODES: Array<{
   },
   {
     name: 'TPM_RC_BINDING',
-    code: rcParameter(TPM_RC.BINDING, 1),
+    code: TPM_RC.BINDING,
     from: 'TPM2_Load §12.2 EXAMPLE 1',
-    when: 'the public area’s unique is not H(obfuscate ‖ secret) over the sensitive area',
+    when:
+      'under a parent without fixedTPM, the public area’s unique is not ' +
+      'H(obfuscate ‖ secret) over the sensitive area; Part 4 ObjectLoad skips this recheck for a ' +
+      'fixedTPM parent because it assumes the TPM created or import-validated the blob',
   },
   {
     name: 'TPM_RC_TYPE',

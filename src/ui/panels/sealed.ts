@@ -366,8 +366,9 @@ export function renderSealedPanel(root: HTMLElement): void {
             'you cannot read the expected PCR values out of it, and the TPM does not store them ' +
             'either. It recomputes.',
           'The SEALED OBJECT’S PUBLIC METADATA. Public: type, attributes, authPolicy, and ' +
-            '`unique`. Not confidential, and not editable either, because the object’s Name is a ' +
-            'digest of this structure and the Name is inside the private blob’s HMAC.',
+            '`unique`. Not confidential, and not editable without the parent seed, because the ' +
+            'object’s Name is a digest of this structure and the Name is inside the private ' +
+            'blob’s HMAC.',
           'The PROTECTED SECRET MATERIAL. Only ever inside `encSensitive`, recoverable only with ' +
             'the storage parent’s seedValue.',
         ].map((t) => el('li', { role: 'listitem' }, [t]))
@@ -391,7 +392,7 @@ export function renderSealedPanel(root: HTMLElement): void {
         el('p', {}, [
           'TPM2B_DIGEST(outerHMAC) followed by the marshalled TPM2B_IV and the encrypted ' +
             'TPM2B_SENSITIVE. The HMAC covers the IV, the ciphertext AND the Name, so the public ' +
-            'and private halves cannot be mixed and matched.',
+            'and private halves cannot be mixed and matched without the parent seed.',
         ]),
         hexRow('outerHMAC = HMAC(HMACkey, symIv || encSensitive || Name)', toHex(reference.object.parts.integrityOuter)),
         hexRow('symIv', toHex(reference.object.parts.iv)),
@@ -489,7 +490,9 @@ export function renderSealedPanel(root: HTMLElement): void {
           'The storage parent’s seedValue is a value in this page’s memory. In hardware it is ' +
             'generated inside the chip and never leaves, and THAT — not any JavaScript equality ' +
             'check — is what makes an integrity failure mean something. One case above hands that ' +
-            'seed to an attacker on purpose, to show which protection survives and which does not.',
+            'seed to an attacker on purpose. Part 4 ObjectLoad skips CryptValidateKeys beneath a ' +
+            'fixedTPM parent because it trusts that the TPM created or import-validated the blob; ' +
+            'after seed extraction, that assumption fails and an authenticated substitute loads.',
         ]),
       ]),
       callout('Four things a PCR policy is not', [
@@ -542,8 +545,9 @@ export function renderSealedPanel(root: HTMLElement): void {
             'Trusted Platform Module Library, Family “2.0”, Level 00 Revision 01.83, January 25, ' +
               '2024 — the same clauses under the older numbering (Part 1 §17.5, §19.7.3, ' +
               '§19.7.11, §22.4, §22.5, §27.5.3.2), and the reference C code published only in ' +
-              'that revision’s Part 3 “Commands with Code”, which is what the hashing order in ' +
-              'this act is transcribed from.',
+              'that revision’s Part 3 “Commands with Code” and Part 4 “Supporting Routines”. ' +
+              'The policy hashing order comes from Part 3; PrivateToSensitive, UnwrapOuter, ' +
+              'ObjectLoad and CryptValidateKeys come from Part 4.',
             'TPM2_VerifySignature (Part 3 §20.2) was DEPRECATED in Version 185, in favour of ' +
               'TPM2_VerifySequenceComplete (§20.3) and TPM2_VerifyDigestSignature (§20.4), whose ' +
               'ticket carries the different tag TPM_ST_DIGEST_VERIFIED. This act mints the ' +

@@ -39,10 +39,10 @@
  *     `outerHMAC := HMAC(HMACkey, symIv || encSensitive || name.buffer)`:
  *       v185 Part 1 §19.5 Equations 35-36   /   1.83 Part 1 §22.5 eq (35)(36)
  *   - the seven-step assembly order: 1.83 Part 1 Figure 17
- *   - `TPM2_Load`: integrity checked BEFORE decrypt and unmarshal;
- *     `TPM_RC_BINDING` if public and sensitive are not cryptographically
- *     linked, with the KEYEDHASH `unique` check as its own EXAMPLE 1:
- *       Part 3 §12.2
+ *   - `TPM2_Load`: integrity checked BEFORE decrypt and unmarshal; public /
+ *     sensitive binding is revalidated for a non-`fixedTPM` parent, with the
+ *     KEYEDHASH `unique` check as its own EXAMPLE 1:
+ *       Part 3 §12.2 and 1.83 Part 4 `ObjectLoad`
  *   - exact `TPM2B_SENSITIVE` consumption and the post-integrity one-block IV
  *     check: 1.83 Part 4 `PrivateToSensitive` and `UnwrapOuter` reference code
  *   - `TPM2_Unseal`: `TPM_RC_TYPE` unless `TPM_ALG_KEYEDHASH`,
@@ -153,9 +153,10 @@ const NOTE = {
   uniqueSize: 'UINT16 size prefix of the TPM2B_DIGEST that follows.',
   unique:
     'H(obfuscate || secret), where obfuscate is a TPM-generated value in the sensitive area. It ' +
-    'binds the public area to this exact secret, so a public area cannot be paired with a ' +
-    'different sensitive area (TPM2_Load returns TPM_RC_BINDING), and it is non-invertible so ' +
-    'publishing it does not make a low-entropy secret guessable.',
+    'cryptographically identifies this exact sensitive area. Object creation or import validates ' +
+    'that binding; TPM2_Load revalidates it for a non-fixedTPM parent, while the fixedTPM-parent ' +
+    'path relies on the blob having been produced or import-validated by the TPM. It is also ' +
+    'non-invertible, so publishing it does not make a low-entropy secret guessable.',
 };
 
 /**
@@ -261,6 +262,13 @@ export function marshalSensitive(s: SealedSensitive): Uint8Array {
 export interface StorageParent {
   label: string;
   nameAlg: number;
+  /**
+   * Whether TPMA_OBJECT.fixedTPM is SET on the parent. Part 4 `ObjectLoad`
+   * treats this as a trust boundary: children beneath such a parent are
+   * assumed to have been created or import-validated by this TPM, so it skips
+   * `CryptValidateKeys` when they are loaded.
+   */
+  fixedTPM: boolean;
   /**
    * The parent's symmetric protection seed. In hardware this never leaves the
    * TPM; here it is a page-local value, which is the one gap no amount of
@@ -473,15 +481,19 @@ function unmarshalSensitive(bytes: Uint8Array): SealedSensitive | null {
  *     unmarshalled, "to prevent attacks on the sensitive area by fuzzing the
  *     data and looking at the differences in the response codes" (NOTE 3) →
  *     `TPM_RC_INTEGRITY`;
- *   - the public and sensitive portions must be cryptographically linked, and
- *     EXAMPLE 1 is this exact object type: "for a symmetric object, the unique
- *     value in the public area is the digest of the sensitive key and the
- *     obfuscation value" → `TPM_RC_BINDING`.
+ *   - for a parent without `fixedTPM`, the public and sensitive portions must
+ *     be cryptographically linked, and EXAMPLE 1 is this exact object type:
+ *     "for a symmetric object, the unique value in the public area is the
+ *     digest of the sensitive key and the obfuscation value" →
+ *     `TPM_RC_BINDING`.
  *
- * The last one is reachable only by an attacker who holds the parent's
- * `seedValue` — anyone else fails the integrity check first. That it is
- * reachable AT ALL in this model is the honest consequence of modelling the
- * seed in page memory.
+ * Part 4 `ObjectLoad` deliberately SKIPS the final binding validation for a
+ * `fixedTPM` parent. Its premise is that only the TPM could have produced (or
+ * import-validated) an authenticated child blob. If the parent's seed is
+ * extracted, that premise is gone: an attacker can forge the outer HMAC and a
+ * fixed-parent load accepts the substitute sensitive area. This model keeps
+ * that consequence executable rather than adding a defence a real TPM does
+ * not perform on this path.
  */
 export function tpm2Load(
   parent: StorageParent,
@@ -502,6 +514,16 @@ export function tpm2Load(
     return rcFail(
       rcParameter(TPM_RC.ATTRIBUTES, 2),
       'sign or decrypt is SET, so this is an HMAC or XOR key rather than a sealed data object'
+    );
+  }
+
+  // TPM2_Load computes the Name before it unwraps inPrivate. Part 3 §12.2
+  // returns TPM_RC_HASH on inPublic when nameAlg is unsupported; keep that
+  // response inside the result model instead of letting computeName throw.
+  if (pub.nameAlg !== TPM_ALG.SHA256) {
+    return rcFail(
+      rcParameter(TPM_RC.HASH, 2),
+      `inPublic names hash algorithm 0x${pub.nameAlg.toString(16)}; this model implements SHA-256 only`
     );
   }
 
@@ -544,19 +566,25 @@ export function tpm2Load(
   if (!sensitive) {
     return rcFail(rcParameter(TPM_RC.SIZE, 1), 'the decrypted sensitive area does not unmarshal');
   }
-  if (sensitive.sensitiveType !== TPM_ALG.KEYEDHASH) {
-    return rcFail(
-      rcParameter(TPM_RC.TYPE, 1),
-      'the sensitive area declares a different type from the public area'
-    );
-  }
-  if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), pub.unique)) {
-    return rcFail(
-      rcParameter(TPM_RC.BINDING, 1),
-      `the public area's unique is ${toHex(pub.unique)} and H(obfuscate || secret) over the ` +
-        `sensitive area is ${toHex(keyedHashUnique(sensitive.seedValue, sensitive.data))}. The ` +
-        'two halves of this object are not the same object.'
-    );
+  // Part 4 ObjectLoad calls CryptValidateKeys only when the parent does not
+  // have fixedTPM SET. With fixedTPM, it relies on creation/import having done
+  // this validation already. That shortcut is sound only while the parent's
+  // protection seed remains confined to the TPM.
+  if (!parent.fixedTPM) {
+    if (sensitive.sensitiveType !== TPM_ALG.KEYEDHASH) {
+      return rcFail(
+        rcParameter(TPM_RC.TYPE, 1),
+        'the sensitive area declares a different type from the public area'
+      );
+    }
+    if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), pub.unique)) {
+      return rcFail(
+        TPM_RC.BINDING,
+        `the public area's unique is ${toHex(pub.unique)} and H(obfuscate || secret) over the ` +
+          `sensitive area is ${toHex(keyedHashUnique(sensitive.seedValue, sensitive.data))}. The ` +
+          'two halves of this object are not the same object.'
+      );
+    }
   }
 
   return { ok: true, object: { publicArea, pub, name, sensitive } };

@@ -23,7 +23,7 @@ analogy to them.
 | Hash to curve | RFC 9380 | Separate DAA-specific BLS12-381 G1 domain-separation tags for the public generators and basename map |
 | Credential activation | TPM 2.0 Part 3 §12.6–12.7; TCG EK Credential Profile | Real ECDH on P-256, real `KDFa`/`KDFe`, real AES-128-CFB, real HMAC-SHA-256 |
 | Enhanced authorization | TPM 2.0 Part 3 §5.6, §23.2.3, §23.6, §23.7, §23.11, §23.16 | `TPM2_PolicyPCR`, `TPM2_PolicyOR`, `TPM2_PolicyCommandCode` and `TPM2_PolicyAuthorize`, transcribed from the reference implementation's own hashing order, with `PolicyUpdate` pinned to the published TCG EK Credential Profile `authPolicy` constant |
-| Sealed data objects | TPM 2.0 Part 1 §19.4, §19.5, §24.3.3, §24.5.3.2; Part 2 §12.2.4, §12.3.2.4, §12.3.7; Part 3 §12.1, §12.2, §12.7 (Version 185 numbering); 1.83 Part 4 `PrivateToSensitive` / `UnwrapOuter` reference code | A `TPM_ALG_KEYEDHASH` `TPMT_PUBLIC`, `unique := H(obfuscate ‖ secret)`, and a private blob built by `KDFa`/AES-128-CFB/outer HMAC over `symIv ‖ encSensitive ‖ Name` |
+| Sealed data objects | TPM 2.0 Part 1 §19.4, §19.5, §24.3.3, §24.5.3.2; Part 2 §12.2.4, §12.3.2.4, §12.3.7; Part 3 §12.1, §12.2, §12.7 (Version 185 numbering); 1.83 Part 4 `PrivateToSensitive`, `UnwrapOuter`, `ObjectLoad`, and `CryptValidateKeys` reference code | A `TPM_ALG_KEYEDHASH` `TPMT_PUBLIC`, `unique := H(obfuscate ‖ secret)`, and a private blob built by `KDFa`/AES-128-CFB/outer HMAC over `symIv ‖ encSensitive ‖ Name`; the load model preserves the fixedTPM-parent validation shortcut |
 | Attestation architecture | **RFC 9334** — RATS Architecture (Informational, January 2023) | Attester → Evidence → Verifier → Attestation Result → Relying Party, with Endorsements and Reference Values as separate inputs |
 | Evidence format | **RFC 9711** — Entity Attestation Token (Standards Track, April 2025) | A real claims-set, integer-keyed in CBOR and name-keyed in JSON |
 | Measurement encoding | **RFC 10013** — EAT Measured Component (Standards Track, July 2026) | The `measured-component` data item, both serializations |
@@ -111,8 +111,10 @@ enforced against someone inspecting the browser bundle.
    state; change the firmware and watch `TPM2_PolicyPCR` refuse from the actual composite digest;
    assert the wrong PCR selection; tamper with the public metadata or the ciphertext and watch
    `TPM2_Load` refuse before it decrypts anything; attempt recovery with the wrong authority, the
-   wrong purpose, the wrong state and no signature at all; then recover correctly and watch the
-   same `authPolicy` accept a state it was never sealed to. The last case releases the secret and
+   wrong purpose, the wrong state and no signature at all; extract the modelled fixedTPM storage
+   parent's seed and watch an authenticated replacement blob load (the original secret remains
+   hidden); then recover correctly and watch the same `authPolicy` accept a state it was never
+   sealed to. The last case releases the secret and
    then compromises the machine, which is a statement about what was already handed over rather
    than about the policy.
 
@@ -209,6 +211,14 @@ old measured state unless a second assertion such as `TPM2_PolicyNV` says so; an
 has no lockout at all. Exhibit 8 states all three as non-claims rather than leaving them to be
 inferred.
 
+**`fixedTPM` is a confinement premise, not an extra MAC.** The TPM reference `ObjectLoad` path
+skips `CryptValidateKeys` for a child under a `fixedTPM` parent because it assumes that this TPM
+created the blob or validated it during import. If the storage parent's protection seed is
+extracted, an attacker can make the outer HMAC for a substitute sensitive area; the fixed-parent
+load accepts it. Exhibit 8 executes that consequence and distinguishes it from the non-fixed-parent
+path, where the same public/sensitive mismatch returns `TPM_RC_BINDING`. The original sealed value
+is not disclosed by this substitution, but the integrity of what a valid policy releases is lost.
+
 **DAA revocation is not one generic feature.** This lesson implements CDL's private-key rogue-list
 check only. It can revoke a platform after its `gsk` is known; an unrelated listed secret must not
 reject it. Publishing `gsk` also lets verifiers calculate that revoked platform's pseudonym for
@@ -294,7 +304,7 @@ checked protocol equations.
 | `src/daa/protocol.test.ts` | CDL equations, Join/credential/signature negatives, canonical points/scalars, basename Link, rogue-list semantics, issuer rotation, deterministic vectors, and proof-randomness/credential-interpolation extraction regressions |
 | `src/daa/attestation.test.ts` | Empty anonymous `qualifiedSigner`, byte-level statement vector, PCR/nonce binding, and credential/issuer/revocation lesson outcomes |
 | `src/tpm/policy.test.ts` | The published TCG EK Credential Profile `authPolicy` re-derived from scratch through `policyUpdate`; Part 2's own worked response-code composition (`0x080 + 0x004 + 0x140 = 0x1c4`); both published `pcrSelect` bitmap examples inside a full `TPML_PCR_SELECTION`; every policy equation recomputed by a second implementation using `@noble/hashes`; every refusal path of `TPM2_PolicyPCR`, `TPM2_PolicyOR`, `TPM2_PolicyCommandCode`, `TPM2_PolicyAuthorize` and the Part 3 §5.6 authorization checks |
-| `src/tpm/seal.test.ts` | The sealed `TPMT_PUBLIC` tiled field by field and its Name re-derived; `unique := H(obfuscate ‖ secret)` and the bare-digest version it is not; `KDFa` STORAGE/INTEGRITY re-derived independently; the sensitive area recovered with `@noble/ciphers` rather than this module's wrapping; and `TPM_RC_INTEGRITY`, `TPM_RC_BINDING`, `TPM_RC_TYPE`, `TPM_RC_ATTRIBUTES`, `TPM_RC_SIZE`, `TPM_RC_POLICY_FAIL` and `TPM_RC_POLICY_CC` each reached by its own cause |
+| `src/tpm/seal.test.ts` | The sealed `TPMT_PUBLIC` tiled field by field and its Name re-derived; `unique := H(obfuscate ‖ secret)` and the bare-digest version it is not; `KDFa` STORAGE/INTEGRITY re-derived independently; the sensitive area recovered with `@noble/ciphers` rather than this module's wrapping; fixedTPM-parent validation skipping compared with the non-fixed-parent `TPM_RC_BINDING` path; unsupported `nameAlg` returned as `TPM_RC_HASH` rather than an exception; and the remaining response-code paths reached by their own causes |
 | `src/acts/sealing.test.ts` | All fifteen named scenarios run to a verdict; the eight required controls asserted as outcomes; the policy proven to bind the selection, the expected digest, the authority and the purpose; branch B proven independent of the state; and every response code the scenarios emit proven to have a row in the act's own reference table |
 | `e2e/claims.spec.ts` | Does the page tell the truth — every printed extension re-derived with OpenSSL's SHA-256, the byte map tiled against the blob it describes, each failure path naming its actual cause, DAA statement hash and pairing recomputed independently, verdict retirement, the NEG-1 / THREAT-1 fixtures, and every policy-digest hash stage on the sealed-storage page re-derived with OpenSSL including both halves of the two-hash `PolicyUpdate` |
 | `e2e/a11y.spec.ts` | Zero axe WCAG 2.1 A/AA violations across every driven state, at desktop and 380px, with arithmetic contrast and non-text contrast oracles axe does not have |

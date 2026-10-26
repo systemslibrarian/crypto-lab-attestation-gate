@@ -924,12 +924,19 @@ test('tampering with the public metadata fails before anything is decrypted', as
   await expect(page.locator('#panel-sealed .seal-result .check[data-state="fail"]')).toHaveCount(1);
 });
 
-test('a re-wrapped substitute secret fails on binding, not on integrity', async ({ page }) => {
+test('a forged replacement loads after the fixedTPM parent seed is extracted', async ({ page }) => {
   await openSealed(page);
-  await runSealedCase(page, 'rebind-binding');
+  await runSealedCase(page, 'rebind-fixed-parent');
+  await expect(page.locator('#panel-sealed .seal-result .verdict-label')).toHaveText('RELEASED');
   const codes = await page.locator('#panel-sealed .seal-result .code-name').allTextContents();
-  expect(codes.map((c) => c.trim())).toContain('TPM_RC_BINDING');
+  expect(codes.map((c) => c.trim())).not.toContain('TPM_RC_BINDING');
   expect(codes.map((c) => c.trim())).not.toContain('TPM_RC_INTEGRITY');
+  await expect(page.locator('#panel-sealed .seal-result')).toContainText(
+    'does not recompute unique'
+  );
+  await expect(page.locator('#panel-sealed .seal-result')).toContainText(
+    'attacker-chosen-value'
+  );
   // The attacker view names the capability this case assumes, rather than
   // leaving it implicit.
   const attacker = page.locator('#panel-sealed details.disclosure').filter({

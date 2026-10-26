@@ -274,16 +274,32 @@ const mutations = [
     test: 'carries unique = H(obfuscate || secret), not H(secret)',
   },
   {
-    name: 'TPM2_Load stops checking that the two halves are one object',
+    name: 'non-fixedTPM Load stops checking that the two halves are one object',
     file: SEAL,
-    anchor: '  if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), pub.unique)) {',
+    anchor: '    if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), pub.unique)) {',
     // Compares the sensitive area against ITSELF rather than against the
-    // public area's `unique`: always false, and it keeps the control flow and
-    // the narrowing `if (false)` would discard, so the mutation compiles.
+    // public area's `unique`: always false while retaining the branch shape.
     replacement:
-      '  if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), keyedHashUnique(sensitive.seedValue, sensitive.data))) {',
+      '    if (!bytesEqual(keyedHashUnique(sensitive.seedValue, sensitive.data), keyedHashUnique(sensitive.seedValue, sensitive.data))) {',
     spec: SEAL_TEST,
-    test: 'refuses a re-wrapped substitute secret with TPM_RC_BINDING, not TPM_RC_INTEGRITY',
+    test: 'revalidates the binding and returns TPM_RC_BINDING for a non-fixedTPM parent',
+  },
+  {
+    name: 'fixedTPM Load incorrectly revalidates a TPM-authenticated child blob',
+    file: SEAL,
+    anchor: '  if (!parent.fixedTPM) {',
+    replacement: '  if (parent.fixedTPM) {',
+    spec: SEAL_TEST,
+    test: 'accepts a re-wrapped substitute under a fixedTPM parent once its seed is compromised',
+  },
+  {
+    name: 'TPM2_Load sends an unsupported nameAlg into computeName',
+    file: SEAL,
+    anchor: '  if (pub.nameAlg !== TPM_ALG.SHA256) {',
+    replacement:
+      '  if (pub.nameAlg !== TPM_ALG.SHA256 && publicArea.length < 0) {',
+    spec: SEAL_TEST,
+    test: 'returns TPM_RC_HASH on inPublic instead of throwing for an unsupported nameAlg',
   },
   {
     name: 'TPM2_Load accepts bytes after the declared TPM2B_SENSITIVE',
