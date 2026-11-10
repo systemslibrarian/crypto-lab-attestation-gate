@@ -108,6 +108,7 @@ jobs:
         uses: dependabot/fetch-metadata@v3
 
       - name: Merge any bump whose gate went green
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
         # Retry: a sibling PR merging first moves main underneath us and GitHub
         # rejects with "Base branch was modified". That is benign, so try again
         # rather than failing the run over a race.
