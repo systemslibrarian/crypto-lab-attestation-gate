@@ -204,7 +204,7 @@ export function renderMagicPanel(root: HTMLElement): void {
     card('Reading the rule precisely', [
       disclosure('Where the specification says this, in its own words', [
         el('p', {}, [
-          el('em', {}, ['TPM 2.0 Library Part 1 §11.4.6.1: ']),
+          el('em', {}, ['TPM 2.0 Library Part 1 §8.4.6.1 (1.83 §11.4.6.1), word for word in both editions: ']),
           '“When a key has this restriction, the TPM will not use the key to sign message digests ' +
             'that the TPM did not compute… To allow a restricted key to sign an externally ' +
             'generated message, the TPM is used to produce the message digest. When the TPM ' +
@@ -214,9 +214,10 @@ export function renderMagicPanel(root: HTMLElement): void {
             'is safe to sign with a restricted key.”',
         ]),
         el('p', {}, [
-          el('em', {}, ['And Part 1 §9.5.3.2, on the verifier’s duty: ']),
-          '“Similarly, an entity checking an attestation made by an AK must verify that the ' +
-            'message signed begins with TPM_GENERATED_VALUE.” Note the word the specification ' +
+          el('em', {}, ['And 1.83 Part 1 §9.5.3.2, on the verifier’s duty — a sentence Version 185 no longer carries: ']),
+          '“Similarly, an entity checking an attestation made by an AK has to verify that the ' +
+            'message signed begins with TPM_GENERATED_VALUE in order to verify the message is ' +
+            'indeed a TPM-generated quote.” Note the word the specification ' +
             'chose. The mechanism is stated first and the verifier’s check is introduced as an ' +
             'additional, similar duty — a backstop against misparsing, not the anti-forgery ' +
             'measure.',

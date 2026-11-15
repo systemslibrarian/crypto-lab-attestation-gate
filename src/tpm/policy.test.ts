@@ -403,7 +403,7 @@ describe('TPM2_PolicyAuthorize', () => {
     );
   });
 
-  it('reaches the same digest from any approved state — Part 1 Figure 16', () => {
+  it('reaches the same digest from any approved state — Part 1 Figures 12 and 13', () => {
     const other = sha256(utf8('a completely different approved state'));
     const first = sessionAt(approved);
     const second = sessionAt(other);

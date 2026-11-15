@@ -17,7 +17,7 @@ analogy to them.
 |---|---|---|
 | PCR extension | TPM 2.0 Library Part 1, "PCR Operations" | Hand-rolled `PCR_new := H(PCR_old ‖ measurement)` over a hand-rolled SHA-256 (FIPS 180-4), so the exact 64-byte preimage can be shown |
 | `TPMS_ATTEST` | TPM 2.0 Library Part 2, `TPMS_ATTEST` / `TPMS_QUOTE_INFO` / `TPML_PCR_SELECTION` | Hand-rolled marshaller with a per-field byte map, plus a strict fail-closed parser |
-| Restricted signing | TPM 2.0 Part 1 §11.4.6.1, §25.1.3; Part 3 §15.4, §17.6, §20.2 | `TicketIsSafe()`, the NULL validation ticket, and `TPM_RC_TICKET` on `TPM2_Sign` |
+| Restricted signing | TPM 2.0 Part 1 §8.4.6.1, §22.1.3; Part 3 §15.4, §17.8, §20.5 (Version 185 numbering; the same clauses are 1.83 Part 1 §11.4.6.1, §25.1.3 and Part 3 §15.4, §17.6, §20.2) | `TicketIsSafe()`, the NULL validation ticket, and `TPM_RC_TICKET` on `TPM2_Sign` |
 | Quote signature | ECDSA on NIST P-256 (FIPS 186-5 §6; curve per SP 800-186 §3.2.1.3) | `@noble/curves`, deterministic per RFC 6979 so every byte on the page is reproducible |
 | Anonymous membership | Camenisch–Drijvers–Lehmann `Pi_DAA+`, full version of IACR ePrint 2016/663 §5.1 | Zero-application-attribute Setup, Join proof, BBS+ credential, randomized Sign/Verify, basename Link, and private-key rogue-list check over BLS12-381 |
 | Hash to curve | RFC 9380 | Separate DAA-specific BLS12-381 G1 domain-separation tags for the public generators and basename map |

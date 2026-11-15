@@ -2,7 +2,9 @@
  * TPM objects: their public areas, their Names, and the one rule that makes an
  * Attestation Key different from an ordinary signing key.
  *
- * THE RULE (TPM 2.0 Part 1 §11.4.6.1, §25.1.3; Part 3 §15.4, §17.6, §20.2):
+ * THE RULE (TPM 2.0 Version 185 Part 1 §8.4.6.1, §22.1.3; Part 3 §15.4, §17.8,
+ * §20.5 — the same clauses are 1.83 Part 1 §11.4.6.1, §25.1.3; Part 3 §15.4,
+ * §17.6, §20.2):
  *
  *   A restricted signing key may only sign a digest the TPM produced. When the
  *   TPM hashes EXTERNALLY supplied data it checks whether the first four
@@ -16,17 +18,19 @@
  * value is not a marker a verifier authenticates — it is public, and an
  * attacker can put it anywhere. It is a DOMAIN SEPARATOR enforced by the
  * signing oracle, exactly like a hash-prefix domain separator. The spec's own
- * example: "If an attacker produced a message block that was identical to a
- * TPM-generated quote... the TPM notes that the first octets are the same as
- * TPM_GENERATED_VALUE. It will not generate the ticket... so an AK may not be
+ * example (1.83 Part 1 §9.5.3.2): "If an attacker produced a message block
+ * that was identical to a TPM-generated quote... When the TPM performs a digest
+ * of this block, it notes that the first octets are the same as
+ * TPM_GENERATED_VALUE. It will not generate the ticket... so an AK cannot be
  * used to sign this digest."
  *
- * A verifier-side magic check is still required — Part 1 §9.5.3.2 introduces
- * it with "Similarly" — but its job is the converse: a restricted AK is
- * legitimately allowed to sign external digests WITH a valid ticket (a PKCS#10
- * CSR, for instance), so the verifier must confirm the blob it is parsing is
- * an attestation and not some other signature by the same key. Presenting that
- * check as the anti-forgery mechanism is the error CVE-2024-29038 punishes:
+ * A verifier-side magic check is still required — 1.83 Part 1 §9.5.3.2
+ * introduces it with "Similarly" — but its job is the converse: a restricted
+ * AK is legitimately allowed to sign external digests WITH a valid ticket (a
+ * PKCS#10 CSR, for instance), so the verifier must confirm the blob it is
+ * parsing is an attestation and not some other signature by the same key.
+ * Presenting that check as the anti-forgery mechanism is the error
+ * CVE-2024-29038 punishes:
  * `tpm2_checkquote` stopped comparing `magic` in tpm2-tools 4.1-rc0 and did
  * not resume until 5.5.1/5.6.1/5.7.
  *

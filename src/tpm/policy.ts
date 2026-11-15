@@ -546,9 +546,9 @@ export interface PolicyAuthorizeInput {
  *
  * This is the command that lets a fixed `authPolicy` survive a measurement
  * change, and the spec says so in its own words: Part 1 §16.7.11 (1.83
- * §19.7.11) calls a policy that cannot accommodate new PCR values "brittle",
- * gives the BIOS-update case as the example, and Figure 16 is exactly the
- * shape used by this lab's recovery route.
+ * §19.7.11) calls the inability of a policy to accommodate changed PCR values
+ * "brittleness", gives the BIOS-update case as the example, and Figures 12 and
+ * 13 (1.83 Figure 16) are exactly the shape used by this lab's recovery route.
  *
  * The order matters. The session must ALREADY have reached the digest the
  * authority signed; only then is the digest reset to zero and replaced by a

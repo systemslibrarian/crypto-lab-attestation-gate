@@ -21,9 +21,10 @@
  * This is the shape the specification itself prescribes for exactly this
  * problem. v185 Part 1 §16.7.11 (1.83 §19.7.11) names the failure mode —
  * "if there is a BIOS update, the PCR will change, and the sealed data value
- * can no longer be retrieved" — calls it brittleness, and gives Figure 16, in
- * which a `PolicyPCR` assertion is followed by `PolicyAuthorize` so that any
- * state the authority has signed converges on the same final digest.
+ * can no longer be retrieved" — calls it brittleness, and gives Figures 12 and
+ * 13 (1.83 Figure 16), in which a `PolicyPCR` assertion is followed by
+ * `PolicyAuthorize` so that any state the authority has signed converges on the
+ * same final digest.
  *
  * TWO CONSEQUENCES WORTH SAYING OUT LOUD, because they are the honest cost of
  * the recovery route and a reader should not have to derive them:
@@ -135,9 +136,9 @@ export const SEAL_PARENT: StorageParent = {
 };
 
 /**
- * The owner hierarchy's `shProof`. Tickets are HMACs under it (Part 2 §10.7
- * Table 102), which is what makes a ticket unforgeable off-chip and cheap to
- * re-check on-chip.
+ * The owner hierarchy's `shProof`. Tickets are HMACs under it (v185 Part 2
+ * §10.6 Table 108; 1.83 Part 2 §10.7 Table 102), which is what makes a ticket
+ * unforgeable off-chip and cheap to re-check on-chip.
  */
 const OWNER_PROOF = labelledBytes('crypto-lab-attestation-gate/seal/shProof', SHA256_LEN);
 

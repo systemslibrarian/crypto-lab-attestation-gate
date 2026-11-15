@@ -48,7 +48,7 @@ export const FAILURE_TABLE: Record<FailureCode, FailureMeta> = {
       'verifier’s reference values. Something in the measured set is not what the fleet expects — ' +
       'the quote says WHICH SET changed, never which stage.',
     realWorld:
-      'tpm2_checkquote exits non-zero with "Error validating PCR composite against quote"; ' +
+      'tpm2_checkquote exits non-zero with "Error validating PCR composite against signed message"; ' +
       'Keylime reports a failed measured-boot policy evaluation.',
   },
   [FAILURE.NONCE_STALE]: {

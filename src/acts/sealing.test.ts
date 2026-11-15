@@ -258,8 +258,9 @@ describe('the policy the object carries', () => {
   it('reaches branch B by a digest that does not mention the state at all', () => {
     const base = referenceSealedObject().plan;
     const elsewhere = computePolicy({ expectedDigest: sha256(utf8('some other state')) });
-    // Branch A moves with the state; branch B does not. That is Figure 16's
-    // whole point, and the cost of the recovery route.
+    // Branch A moves with the state; branch B does not. That is the whole point
+    // of Part 1 Figures 12 and 13 (1.83 Figure 16), and the cost of the
+    // recovery route.
     expect(toHex(elsewhere.branchA)).not.toBe(toHex(base.branchA));
     expect(toHex(elsewhere.branchB)).toBe(toHex(base.branchB));
   });
