@@ -18,7 +18,7 @@ analogy to them.
 | PCR extension | TPM 2.0 Library Part 1, "PCR Operations" | Hand-rolled `PCR_new := H(PCR_old ‖ measurement)` over a hand-rolled SHA-256 (FIPS 180-4), so the exact 64-byte preimage can be shown |
 | `TPMS_ATTEST` | TPM 2.0 Library Part 2, `TPMS_ATTEST` / `TPMS_QUOTE_INFO` / `TPML_PCR_SELECTION` | Hand-rolled marshaller with a per-field byte map, plus a strict fail-closed parser |
 | Restricted signing | TPM 2.0 Part 1 §11.4.6.1, §25.1.3; Part 3 §15.4, §17.6, §20.2 | `TicketIsSafe()`, the NULL validation ticket, and `TPM_RC_TICKET` on `TPM2_Sign` |
-| Quote signature | ECDSA on NIST P-256 (FIPS 186-4) | `@noble/curves`, deterministic per RFC 6979 so every byte on the page is reproducible |
+| Quote signature | ECDSA on NIST P-256 (FIPS 186-5 §6; curve per SP 800-186 §3.2.1.3) | `@noble/curves`, deterministic per RFC 6979 so every byte on the page is reproducible |
 | Anonymous membership | Camenisch–Drijvers–Lehmann `Pi_DAA+`, full version of IACR ePrint 2016/663 §5.1 | Zero-application-attribute Setup, Join proof, BBS+ credential, randomized Sign/Verify, basename Link, and private-key rogue-list check over BLS12-381 |
 | Hash to curve | RFC 9380 | Separate DAA-specific BLS12-381 G1 domain-separation tags for the public generators and basename map |
 | Credential activation | TPM 2.0 Part 3 §12.6–12.7; TCG EK Credential Profile | Real ECDH on P-256, real `KDFa`/`KDFe`, real AES-128-CFB, real HMAC-SHA-256 |
@@ -28,6 +28,11 @@ analogy to them.
 | Evidence format | **RFC 9711** — Entity Attestation Token (Standards Track, April 2025) | A real claims-set, integer-keyed in CBOR and name-keyed in JSON |
 | Measurement encoding | **RFC 10013** — EAT Measured Component (Standards Track, July 2026) | The `measured-component` data item, both serializations |
 | CBOR | **RFC 8949** | Hand-rolled deterministic encoder (§4.2.1 core deterministic encoding) |
+
+**Standards reviewed 15 November 2026:** ECDSA is cited to
+[FIPS 186-5](https://csrc.nist.gov/pubs/fips/186-5/final) (February 2023, §6), which superseded
+FIPS 186-4 — [withdrawn 3 February 2024](https://csrc.nist.gov/pubs/fips/186-4/final); the P-256
+domain parameters now live in [SP 800-186 §3.2.1.3](https://csrc.nist.gov/pubs/sp/800/186/final).
 
 **The maths, in one paragraph.** A PCR is a register whose only write operation is
 `PCR ← H(PCR ‖ d)`. The old value is an input, so the sequence of measurements is welded in order:
