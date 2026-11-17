@@ -1067,22 +1067,40 @@ test('the sealed-storage act keeps its non-claims visible', async ({ page }) => 
   await expect(sources).toContainText('DEPRECATED in Version 185');
 });
 
-test('the sealed-storage act is operable by keyboard alone', async ({ page }) => {
+test('the sealed-storage act is operable by keyboard alone', async ({ page, browserName }) => {
   // Keyboard operation of the controls this act adds, driven with no pointer
   // events at all: tab to the tablist, arrow to the eighth tab, tab into the
   // panel, reach a case button and the Run button, and activate both with the
   // keys a reader would actually press.
+  //
+  // WHICH KEY "TAB" IS depends on the engine, and Safari is the odd one out.
+  // With "Press Tab to highlight each item on a webpage" off — its default —
+  // WebKit's Tab visits form fields and elements carrying an explicit tabindex
+  // and skips links and plain buttons. Measured on this page: Chromium and
+  // Firefox walk
+  //   skip-link, brand, 2 header links, 2 summaries, #tab-boot, #panel-boot, …
+  // while WebKit's Tab starts at the first summary and never offers the links
+  // or the case buttons at all. Option+Tab is what a Safari reader presses for
+  // the full traversal, and it reproduces that order exactly — verified element
+  // for element against Chromium's.
+  //
+  // So the walk below uses the key that performs a full traversal on the engine
+  // under test. The page is unchanged by this: the skip link carries
+  // tabIndex=0 and no control is disabled or out of the tab order, which is why
+  // a control that regressed OUT of the order would still fail here on every
+  // engine — Option+Tab respects tabindex exactly as Tab does.
+  const TAB = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
   await page.goto('.');
   await expect(page.locator('#panel-boot .step-progress')).toHaveText('Step 0 / 6');
 
-  await page.keyboard.press('Tab'); // the shared skip link
+  await page.keyboard.press(TAB); // the shared skip link
   await expect(page.locator('a.cl-skip-link')).toBeFocused();
 
   // Walk forward until the tablist's active tab takes focus, then drive the
   // tablist with End — the roving-tabindex contract — to reach the last tab.
   const firstTab = page.getByRole('tab').first();
   for (let i = 0; i < 12 && !(await firstTab.evaluate((el) => el === document.activeElement)); i++) {
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(TAB);
   }
   await expect(firstTab).toBeFocused();
   await page.keyboard.press('End');
@@ -1094,7 +1112,7 @@ test('the sealed-storage act is operable by keyboard alone', async ({ page }) =>
   // Reach a case button by tabbing, and press it with Space.
   const tamper = page.locator('#panel-sealed button[data-scenario="tamper-private"]');
   for (let i = 0; i < 40 && !(await tamper.evaluate((el) => el === document.activeElement)); i++) {
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(TAB);
   }
   await expect(tamper).toBeFocused();
   await page.keyboard.press(' ');
@@ -1105,7 +1123,7 @@ test('the sealed-storage act is operable by keyboard alone', async ({ page }) =>
   // reach Run and press Enter.
   const field = page.locator('#seal-firmware');
   for (let i = 0; i < 40 && !(await field.evaluate((el) => el === document.activeElement)); i++) {
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(TAB);
   }
   await expect(field).toBeFocused();
   await page.keyboard.type('X');
@@ -1115,7 +1133,7 @@ test('the sealed-storage act is operable by keyboard alone', async ({ page }) =>
 
   const run = page.locator('#panel-sealed').getByRole('button', { name: 'Run this case' });
   for (let i = 0; i < 10 && !(await run.evaluate((el) => el === document.activeElement)); i++) {
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(TAB);
   }
   await expect(run).toBeFocused();
   await page.keyboard.press('Enter');
