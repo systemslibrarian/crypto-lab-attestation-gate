@@ -34,7 +34,8 @@
  * memory. Every quote it then signs is cryptographically perfect.
  *
  * All the crypto here is real: real ECDH on P-256, real KDFa/KDFe, real
- * AES-128-CFB (from `@noble/ciphers`, a named audited implementation), real
+ * AES-128-CFB (from `@noble/ciphers`, pinned ^2.4.0 — later than its latest
+ * audit, "at version 1.0.0, in Sep 2024, independently, by [cure53]"), real
  * HMAC-SHA-256. The one simplification is that the ephemeral key is derived
  * deterministically from a label rather than drawn from an RNG, so the page's
  * bytes are reproducible.
