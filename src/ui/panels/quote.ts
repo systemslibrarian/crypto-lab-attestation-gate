@@ -51,10 +51,11 @@ export function renderQuotePanel(root: HTMLElement): void {
       el('div', { class: 'two-col' }, [
         el('div', {}, [
           el('span', { class: 'eyebrow' }, ['1 · Relying party → attester']),
-          hexRow('nonce (32 random bytes, fresh for this exchange)', nonce),
+          hexRow('nonce (32 reproducible demo bytes)', nonce),
           el('p', { class: 'card-lede' }, [
-            'The nonce is the only thing making this exchange different from the last one. It goes ' +
-              'into the signed structure as extraData, untouched — the TPM does not interpret it.',
+            'New challenge advances a deterministic sequence. Reloading repeats it. A verifier using ' +
+              'nonces for freshness in a real exchange needs an unpredictable challenge. The TPM ' +
+              'copies the nonce into the signed extraData field.',
           ]),
         ]),
         el('div', {}, [
@@ -66,18 +67,19 @@ export function renderQuotePanel(root: HTMLElement): void {
       el('span', { class: 'eyebrow' }, ['3 · Verifier appraises']),
       headline(result, {
         compromised: false,
-        headline: 'The machine is running exactly what it measured.',
+        headline: 'The selected boot measurements match the reference values.',
         explanation:
-          'Nothing outside the measured set has executed, the attestation key is inside the TPM, ' +
-          'and the relying party’s trust anchors are the ones it meant to configure. The other ' +
-          'tabs are the runs where one of those stops being true.',
+          'In this example the model ran only the measured boot stages. The verifier checks the ' +
+          'selected measurements and the challenge. The quote alone cannot establish what the ' +
+          'machine is running now.',
       }),
       checkList(result.checks),
       el('h4', { class: 'card-title' }, ['Replayed registers against the reference values']),
       el('p', { class: 'card-lede' }, [
         'A quote contains no PCR values at all — only one composite digest over the selected set. ' +
-          'The verifier gets the individual registers by replaying the event log, and knows the ' +
-          'log is honest because the replay has to reproduce the digest inside the signature.',
+          'The verifier replays the event digests to reconstruct the selected registers, then ' +
+          'compares their composite digest with the signed value. Additional event descriptions ' +
+          'outside the measured bytes need separate evidence.',
       ]),
       pcrComparison(result.pcrs),
       disclosure('The whole TPMS_ATTEST, field by field', [
@@ -161,9 +163,9 @@ export function renderQuotePanel(root: HTMLElement): void {
   clear(root).append(
     card('Asking a machine what it booted', [
       el('p', { class: 'card-lede' }, [
-        'The registers from Act 1 never leave the TPM. To convey them somewhere, the TPM signs a ' +
-          'statement about them with a key it will not release — an attestation key — and that ' +
-          'signed statement is a quote.',
+        'PCR values can be read. A quote authenticates a composite digest of the selected PCRs and the ' +
+          'challenge nonce using the attestation key. Replaying the event log lets the verifier ' +
+          'reconstruct the expected register values and compare the digest.',
       ]),
       el('p', { class: 'card-lede' }, [
         'The relying party goes first: it sends a nonce, so a quote made yesterday cannot answer ' +

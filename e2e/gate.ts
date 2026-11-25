@@ -783,7 +783,7 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   // register, and the panel says which.
   await page.fill('#stage-bootloader', 'grubx64.efi 2.12-9 / a4f1c3 / signed');
   await expect(page.locator('#panel-boot .callout[data-tone="alarm"]')).toContainText(
-    'no longer match the reference values'
+    '1 register no longer matches the reference values'
   );
   await scanAt('Boot: one measured byte edited — the diverged-register alarm callout');
 

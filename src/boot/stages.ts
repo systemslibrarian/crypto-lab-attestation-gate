@@ -101,8 +101,8 @@ export const DEFAULT_STAGES: BootStage[] = [
     editable: true,
     note:
       'The boot manager measures the image it is about to launch — before launching it. Change ' +
-      'one byte of the loader and this digest changes, and every PCR value downstream of it ' +
-      'changes with it.',
+      'one byte of the loader and its digest changes. In this exercise the edit changes PCR 4. ' +
+      'The other three registers receive the same measurements as before.',
   },
   {
     id: 'cmdline',

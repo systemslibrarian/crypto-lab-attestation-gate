@@ -56,6 +56,14 @@ export function renderBootPanel(root: HTMLElement): void {
     draw();
   });
 
+  const stageList = el(
+    'ul',
+    { class: 'stages', role: 'list', 'aria-label': 'Boot stages' },
+    stages.map((stage, index) => stageRow(stage, index, draw))
+  );
+  const stageSummary = el('div');
+  stageOut.append(stageList, stageSummary);
+
   function draw(): void {
     const { measurements } = runMeasuredBoot(stages);
     progress.textContent = `Step ${step} / ${stages.length}`;
@@ -119,10 +127,10 @@ export function renderBootPanel(root: HTMLElement): void {
         stepOut.appendChild(
           callout('The chain is closed', [
             el('p', {}, [
-              'Six measurements, four registers. Nothing here can be un-said: to land PCR 4 back ' +
-                'on the value it held before the boot loader was measured, you would have to find ' +
-                'bytes whose digest sends the current register to a value you chose. That is a ' +
-                'second-preimage problem on SHA-256.',
+              'Six measurements, four registers. Within one register, each extension depends on the previous value. ' +
+                'To reach a specified target by extending the current PCR, you would have to find a matching input to SHA-256. ' +
+                'Finding an input for a given digest is a preimage problem. If a particular input is given and ' +
+                'you seek a different input with the same digest, that is a second-preimage problem.',
             ]),
           ])
         );
@@ -132,22 +140,17 @@ export function renderBootPanel(root: HTMLElement): void {
     // ── The stage editor ──────────────────────────────────────────────────
     const current = referenceValues(stages);
     const moved = [...QUOTED_PCRS].filter((pcr) => current.get(pcr) !== GOLDEN.get(pcr));
-    clear(stageOut).append(
-      el(
-        'ul',
-        { class: 'stages', role: 'list', 'aria-label': 'Boot stages' },
-        stages.map((stage, i) => stageRow(stage, i, () => draw()))
-      ),
+    clear(stageSummary).append(
       moved.length === 0
         ? el('p', { class: 'card-lede', role: 'status', 'aria-live': 'polite' }, [
             'Every register matches the fleet’s reference values. Edit any measured field above ' +
               'and watch which ones stop matching.',
           ])
         : callout(
-            `${moved.length} register${moved.length === 1 ? '' : 's'} no longer match the reference values`,
+            `${moved.length} register${moved.length === 1 ? ' no longer matches' : 's no longer match'} the reference values`,
             [
               el('p', { role: 'status', 'aria-live': 'polite' }, [
-                `PCR ${moved.join(', ')} moved. Note what did NOT move: a change to one stage ` +
+                `PCR ${moved.join(', ')} moved. A change to one stage ` +
                   'touches only the register that stage was measured into, which is exactly why ' +
                   'the split across PCR 0, 4, 8 and 9 is worth having.',
               ]),
@@ -224,8 +227,8 @@ export function renderBootPanel(root: HTMLElement): void {
         el('p', {}, [
           '“You can never rewind a PCR” is a useful shorthand and false as a general claim about ' +
             'TPMs. TPM2_PCR_Reset exists. A dynamic root-of-trust launch zeroes registers ' +
-            'mid-run. A TPM Reset returns PCR 17–22 to all-ones, a value no amount of extending ' +
-            'could ever reach. And TPM Resume restores PCR 0–15 to saved values, which is ' +
+            'mid-run. A TPM Reset returns PCR 17–22 to all-ones. Trying to reach this chosen value ' +
+            'through Extend would be computationally infeasible. TPM Resume restores PCR 0–15 to saved values, which is ' +
             'literally loading an earlier state back in.',
         ]),
         el('p', {}, [
@@ -289,7 +292,7 @@ function previousValue(stages: readonly BootStage[], step: number, pcr: number):
 
 function stageRow(stage: BootStage, index: number, onChange: () => void): HTMLElement {
   const bytes = stage.id === 'separator' ? EV_SEPARATOR_BYTES : utf8(stage.content);
-  const digest = sha256(bytes);
+  const digest = el('div', { class: 'hexblock' }, [`SHA-256 = ${toHex(sha256(bytes))}`]);
   const inputId = `stage-${stage.id}`;
   const body: Array<HTMLElement | null> = [
     el('span', { class: 'stage-head' }, [
@@ -309,6 +312,7 @@ function stageRow(stage: BootStage, index: number, onChange: () => void): HTMLEl
     }) as HTMLInputElement;
     input.addEventListener('input', () => {
       stage.content = input.value;
+      digest.textContent = `SHA-256 = ${toHex(sha256(utf8(stage.content)))}`;
       onChange();
     });
     body.push(
@@ -324,6 +328,6 @@ function stageRow(stage: BootStage, index: number, onChange: () => void): HTMLEl
       ])
     );
   }
-  body.push(el('div', { class: 'hexblock' }, [`SHA-256 = ${toHex(digest)}`]));
+  body.push(digest);
   return el('li', { class: 'stage', role: 'listitem', 'data-stage': stage.id }, body);
 }

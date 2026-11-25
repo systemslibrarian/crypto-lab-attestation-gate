@@ -3,7 +3,7 @@
  *
  * WHY HAND-ROLLED, when `crypto.subtle.digest` and `@noble/hashes` both sit
  * one import away: the hash is not a black box in this lab, it is the
- * mechanism. A PCR is a register whose only write operation is
+ * mechanism. This measured-boot lesson updates each selected PCR with
  * `PCR <- H(PCR || measurement)`, and the whole first act exists to show that
  * the OLD register value is an input to the new one — which is why the
  * accumulation is one-way and why a later stage cannot un-say an earlier one.

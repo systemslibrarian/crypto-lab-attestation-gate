@@ -2,22 +2,20 @@
  * Platform Configuration Registers — the one-way accumulator measured boot is
  * built on.
  *
- * A PCR is a fixed-width register with no write operation. The only way to
- * change it is Extend:
+ * During the measured boot shown here, a fixed-width PCR updates through Extend:
  *
  *     PCR_new := H( PCR_old || measurement )
  *
  * The old value is an INPUT. That is the entire mechanism, and it is why a
  * later stage of boot cannot un-say what an earlier stage recorded: to land on
  * a chosen final value you would have to find a measurement that hashes the
- * current register onto your target, which is a second-preimage problem.
+ * current register onto your target, which is a constrained preimage problem.
  *
  * SCOPE, stated here because the loose version of this claim is false.
  * "You can never rewind a PCR" is NOT true of TPMs in general, for four
  * spec-sanctioned reasons: TPM2_PCR_Reset exists; the D-RTM sequence resets
  * PCR 17 and zeroes 18-22 mid-run at locality 4; a TPM Reset returns every
- * PCR to its initial condition (which for 17-22 is all-ones, a value no
- * amount of extending can reach); and TPM Resume RESTORES the saved values of
+ * PCR to its initial condition (all-ones for 17-22); and TPM Resume RESTORES the saved values of
  * PCR 0-15, which is literally loading an earlier state back in.
  *
  * What IS one-way is the EXTEND OPERATION, because landing on a chosen target

@@ -68,6 +68,33 @@ test('every extension the page prints really is SHA-256(old || measurement)', as
   await expect(next).toBeDisabled();
 });
 
+test('the measured boot editor keeps the caret and hashes the complete edit', async ({ page }) => {
+  const field = page.locator('#stage-bootloader');
+  const original = await field.inputValue();
+  await field.focus();
+  await field.press('Home');
+  await page.keyboard.type('ABC');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('ABC' + original);
+  const expected = createHash('sha256').update('ABC' + original).digest('hex');
+  await expect(page.locator('[data-stage="bootloader"] .hexblock')).toHaveText('SHA-256 = ' + expected);
+  await expect(page.locator('.stage-out .callout')).toContainText('PCR 4 moved');
+});
+
+test('the demo discloses its repeatable challenges and bounds its positive verdict', async ({ page }) => {
+  await openTab(page, /Quote & Verify/);
+  const panel = page.locator('#panel-quote');
+  await expect(panel).toContainText('32 reproducible demo bytes');
+  await expect(panel).toContainText('selected boot measurements match the reference values');
+  const challenge = panel.locator('.hexblock').first();
+  const first = await text(challenge);
+  await panel.getByRole('button', { name: 'New challenge' }).click();
+  await expect(challenge).not.toHaveText(first);
+  await page.reload();
+  await openTab(page, /Quote & Verify/);
+  await expect(challenge).toHaveText(first);
+});
+
 test('the register strip ends on the values the stepper printed', async ({ page }) => {
   const next = page.getByRole('button', { name: 'Next ›' });
   const finalPerPcr = new Map<string, string>();
