@@ -42,8 +42,7 @@ hash of the marshalled `TPMS_ATTEST`, which begins with `FF 54 43 47` and contai
 challenge nonce and a composite digest `H(PCR_a ‖ PCR_b ‖ …)` over the selected PCRs in
 ascending index order. The unsigned event log supplies the measurement digests and PCR
 indices. The verifier replays those extensions and compares the resulting composite
-digest with the one in the signed quote. Additional event descriptions outside the measured bytes
-require separate evidence. The page shows every one of
+digest with the one in the signed quote. Agreement establishes that the supplied measurement digests reproduce the quoted register values. An event that was never measured can be absent from both the log and the register. A deployment appraiser must identify which sources its policy expects, for example the firmware measurement log, Linux IMA or systemd measurements, and check that evidence against a reference policy. Additional event descriptions outside the measured bytes require separate evidence. [TPMSpy, validation of measured boot systems](https://arxiv.org/abs/2609.05011). The page shows every one of
 those steps with its inputs.
 
 The anonymous path uses the same additive/multiplicative translation throughout: the paper's
